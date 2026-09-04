@@ -41,3 +41,12 @@ apps/web/dist/
 worktrees/
 .agents/worktrees/
 .typert-*/
+/dump-headless.txt
+/taskA.txt
+/taskA-full.txt
+/taskB.txt
+/.tmp-dump-tail.mjs
+# local runtime data (never commit)
+acp/
+dsh-work-continuity/
+.dsh-meow/
