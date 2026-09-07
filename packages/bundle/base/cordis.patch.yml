@@ -242,6 +242,9 @@
           workspace-write:
             sandbox: workspace-write
             approval: ask
+          trusted-roots:
+            sandbox: trusted-roots
+            approval: ask
           danger-full-access:
             sandbox: danger-full-access
             approval: never

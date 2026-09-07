@@ -28,10 +28,14 @@ let ctx: Context
 let fs: SandboxedFileSystem
 let fiber: Awaited<ReturnType<Context['plugin']>>
 
-async function boot(mode: SandboxMode): Promise<void> {
+async function boot(mode: SandboxMode, extraWritableRoots?: string[]): Promise<void> {
   ctx = new Context()
   await ctx.plugin(SessionProjectionRegistry)
-  await ctx.plugin(SandboxPolicyService, { mode, workspaceRoot: workspace })
+  await ctx.plugin(SandboxPolicyService, {
+    mode,
+    workspaceRoot: workspace,
+    ...extraWritableRoots === undefined ? {} : { extraWritableRoots },
+  })
   fiber = await ctx.plugin(SandboxedFileSystem, { cwd: workspace })
   fs = ctx.fs as SandboxedFileSystem
 }
@@ -184,6 +188,35 @@ describe('workspace-write with the filesystem root as the workspace (a root endi
     } finally {
       await rootFiber.dispose()
     }
+  })
+})
+
+describe('trusted-roots containment', () => {
+  let extra: string
+  beforeEach(async () => {
+    extra = join(base, 'extra')
+    await mkdir(extra)
+    await boot('trusted-roots', [extra])
+  })
+
+  it('writes land under the workspace AND under the configured extra roots', async () => {
+    await fs.writeText(await target(join(workspace, 'ok.txt')), 'ws')
+    expect(await readFile(join(workspace, 'ok.txt'), 'utf8')).toBe('ws')
+    await fs.writeText(await target(join(extra, 'ok.txt')), 'extra')
+    expect(await readFile(join(extra, 'ok.txt'), 'utf8')).toBe('extra')
+  })
+
+  it('a path outside the workspace and the extra roots is denied, no file created', async () => {
+    const path = join(outside, 'escape.txt')
+    await expect(fs.writeText(await target(path), 'x')).rejects.toMatchObject({ code: 'FS_SANDBOX_DENIED' })
+    expect(existsSync(path)).toBe(false)
+  })
+
+  it('a symlinked-out directory inside an extra root is denied (canonicalized containment)', async () => {
+    await symlink(outside, join(extra, 'link'))
+    const path = join(extra, 'link', 'f.txt')
+    await expect(fs.writeText(await target(path), 'x')).rejects.toMatchObject({ code: 'FS_SANDBOX_DENIED' })
+    expect(existsSync(join(outside, 'f.txt'))).toBe(false)
   })
 })
 
