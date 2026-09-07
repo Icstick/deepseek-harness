@@ -225,6 +225,34 @@ describe('trusted-roots containment', () => {
   })
 })
 
+describe('session path-root rules (remembered directories)', () => {
+  it('a path-root rule makes the directory writable without any escalation, in any confined mode', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionProjectionRegistry)
+    await ctx.plugin(SandboxPolicyService, { mode: 'workspace-write', workspaceRoot: workspace })
+    // The duck-typed approvalRules lookup the fence consults.
+    const remembered = join(base, 'remembered')
+    await mkdir(remembered)
+    ctx.provide('approvalRules', {
+      matchesPath: (sessionId: string, path: string) => sessionId === 'sess-rules' && path.startsWith(remembered),
+    })
+    const ruleFiber = await ctx.plugin(SandboxedFileSystem, { cwd: workspace })
+    const ruleFs = ctx.fs as SandboxedFileSystem
+    try {
+      const path = join(remembered, 'ok.txt')
+      await ruleFs.writeText(await ruleFs.resolve(path), 'x', undefined, undefined, { mode: 'workspace-write', workspaceRoot: workspace, sessionId: 'sess-rules' as never })
+      expect(await readFile(path, 'utf8')).toBe('x')
+      // A sibling session without the rule stays denied.
+      const denied = join(remembered, 'denied.txt')
+      await expect(ruleFs.writeText(await ruleFs.resolve(denied), 'x', undefined, undefined, { mode: 'workspace-write', workspaceRoot: workspace, sessionId: 'sess-other' as never }))
+        .rejects.toMatchObject({ code: 'FS_SANDBOX_DENIED' })
+      expect(existsSync(denied)).toBe(false)
+    } finally {
+      await ruleFiber.dispose()
+    }
+  })
+})
+
 describe('danger-full-access', () => {
   beforeEach(() => boot('danger-full-access'))
 

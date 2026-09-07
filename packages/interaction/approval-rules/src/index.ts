@@ -69,6 +69,18 @@ function pathKey(path: string): string {
 }
 
 /**
+ * Path containment for a path-root rule: whether `target` sits under the
+ * rule's directory (platform-keyed, absolute-against-cwd tolerant). Shared
+ * by the escalation matcher and the fence-level write check.
+ */
+export function pathRootContains(rule: ApprovalRule, target: string): boolean {
+  if (rule.kind !== 'path-root') return false
+  const root = pathKey(isAbsolute(rule.match) ? rule.match : resolve(rule.match))
+  const path = pathKey(resolve(target))
+  return path === root || path.startsWith(root + sep) || path.startsWith(root + '/')
+}
+
+/**
  * Whether one escalation request matches one rule. All facets must align:
  * the tool family, the mode ceiling (context.mode must equal the rule's
  * grant — no rule silently upgrades a narrower ask), and the target
@@ -83,9 +95,7 @@ export function matchesRule(rule: ApprovalRule, request: RuleRequestFace): boole
     if (request.toolName !== rule.tool) return false
     const target = context.path
     if (target === undefined) return false
-    const root = pathKey(isAbsolute(rule.match) ? rule.match : resolve(rule.match))
-    const path = pathKey(resolve(target))
-    return path === root || path.startsWith(root + sep) || path.startsWith(root + '/')
+    return pathRootContains(rule, target)
   }
   if (rule.tool !== 'bash' && rule.tool !== 'pwsh') return false
   if (request.toolName !== rule.tool) return false
@@ -210,6 +220,23 @@ export class ApprovalRuleService extends Service {
   /** The sole write path: append the full replacement set as one log event. */
   appendRules(session: Session, rules: readonly ApprovalRule[], source: 'user' | 'delegation'): void {
     session.append('approval/rules', { rules, source })
+  }
+
+  /**
+   * Whether the session's path-root rules make `path` directly writable.
+   * Consulted by the filesystem fence BEFORE any approval: a remembered
+   * directory is writable for the session in every confined mode, so no
+   * escalation is ever raised for it. Only path-root rules count (shell
+   * command-prefix rules cannot gate individual paths).
+   */
+  matchesPath(sessionId: string, path: string): boolean {
+    const session = this.ctx.sessions.list().find(candidate => String(candidate.id) === String(sessionId))
+    if (session === undefined) return false
+    return this.rulesOf(session).some(rule =>
+      rule.kind === 'path-root'
+      && (rule.tool === 'write' || rule.tool === 'edit')
+      && pathRootContains(rule, path),
+    )
   }
 }
 

@@ -391,7 +391,31 @@ describe('ApprovalPanel', () => {
     await expect(pending.result).resolves.toBe('allowed-once')
   })
 
-  it('hides the remember action without a structured trusted-roots context', async () => {
+  it('offers the remember action for fs asks whose escalation targets full access (trusted-roots root-outside writes)', async () => {
+    const dir = '/tmp/outside'
+    const remember = vi.fn(async () => true)
+    const pending = new PendingApproval(id('s1'), {
+      toolName: 'edit',
+      reason: 'edit outside trusted roots',
+      context: { path: dir + '/file.txt', mode: 'danger-full-access' },
+    }, remember)
+    render(<ApprovalPanel {...panelProps(pending)} />)
+    expect(screen.getByText('This session will not ask again for: {target}')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Remember this kind and allow' }))
+    expect(remember).toHaveBeenCalledWith('/permission-rule add edit ' + dir)
+    await expect(pending.result).resolves.toBe('allowed-once')
+  })
+
+  it('hides the remember action without a structured context, and for full-access shell asks', async () => {
+    const fullShell = new PendingApproval(id('s1'), {
+      toolName: 'pwsh',
+      reason: 'escalate anywhere',
+      context: { command: 'git push origin main', mode: 'danger-full-access' },
+    }, vi.fn(async () => true))
+    render(<ApprovalPanel {...panelProps(fullShell)} />)
+    expect(screen.queryByRole('button', { name: 'Remember this kind and allow' })).toBeNull()
+    fullShell.abort(new Error('test cleanup'))
+    await fullShell.result.catch(() => {})
     const plain = new PendingApproval(id('s1'), { toolName: 'write', reason: 'plain ask' })
     render(<ApprovalPanel {...panelProps(plain)} />)
     expect(screen.queryByRole('button', { name: 'Remember this kind and allow' })).toBeNull()

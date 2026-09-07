@@ -84,17 +84,26 @@ function ApprovalFlow({ pending, detail, t }: {
 /**
  * The /permission-rule line a remember action would submit, plus the
  * user-facing scope label. Undefined when the ask cannot be rule-ized:
- * only trusted-roots escalations with a structured target can become
- * session rules (tool, kind, and ceiling all come from the request).
+ * filesystem asks remember their target directory (session-writable in
+ * every mode); shell asks need a trusted-roots escalation (the ceiling
+ * never grants full access) and remember the exact command prefix.
  */
 function ruleLineOf(pending: PendingApproval): { line: string; target: string } | undefined {
   const context = pending.context
-  if (context === undefined || context.mode !== 'trusted-roots') return undefined
+  if (context === undefined) return undefined
+  // Filesystem asks: any denied write outside the trusted roots can be
+  // remembered as a session-writable directory (the fence honors path-root
+  // rules directly, so no mode ceiling applies to the fs path).
   if ((pending.toolName === 'write' || pending.toolName === 'edit') && context.path !== undefined) {
     const dir = dirnameOf(context.path)
     return { line: '/permission-rule add ' + pending.toolName + ' ' + dir, target: dir }
   }
-  if ((pending.toolName === 'bash' || pending.toolName === 'pwsh') && context.command !== undefined) {
+  // Shell asks: only trusted-roots escalations are rule-able (the rule
+  // ceiling never grants full access); the remembered scope is the exact
+  // command prefix.
+  if (context.mode === 'trusted-roots'
+    && (pending.toolName === 'bash' || pending.toolName === 'pwsh')
+    && context.command !== undefined) {
     return { line: '/permission-rule add ' + pending.toolName + ' ' + context.command, target: context.command }
   }
   return undefined

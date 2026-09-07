@@ -140,6 +140,18 @@ export class SandboxedFileSystem extends LocalFileSystem {
         break
       }
     }
+    if (!contained && policy.sessionId !== undefined) {
+      // Session approval rules (dsh-approval-rules) make remembered
+      // directories directly writable in every confined mode — a path-root
+      // rule means the user already consented to this directory for the
+      // session, so no escalation should ever be raised for it. The lookup
+      // is duck-typed through ctx.get to keep this official package free of
+      // a dependency on the rule package.
+      const rules = this.ctx.get('approvalRules') as
+        | { matchesPath(sessionId: string, path: string): boolean }
+        | undefined
+      contained = rules?.matchesPath(policy.sessionId, fresh.targetKey) ?? false
+    }
     if (!contained) {
       throw new FsError(`cannot write "${target.displayPath}": file access denied under ${mode} mode`, 'FS_SANDBOX_DENIED')
     }
