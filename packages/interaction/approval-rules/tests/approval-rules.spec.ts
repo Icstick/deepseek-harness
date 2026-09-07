@@ -155,7 +155,7 @@ describe('the auto-allow answerer', () => {
 
 describe('tool vocabulary', () => {
   it('exposes the closed tool list', () => {
-    expect(RULE_TOOLS).toEqual(['write', 'edit', 'bash', 'pwsh'])
+    expect(RULE_TOOLS).toEqual(['write', 'edit', 'bash', 'pwsh', 'git'])
   })
 })
 describe('the /permission-rule command', () => {

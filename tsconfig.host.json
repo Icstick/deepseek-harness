@@ -242,6 +242,7 @@
     { "path": "./packages/shell/shell-env" },
     { "path": "./packages/shell/pwsh-local" },
     { "path": "./packages/shell/pwsh-sandbox" },
+    { "path": "./packages/shell/tool-git" },
     { "path": "./packages/shell/tool-pwsh" },
     { "path": "./native/landlock-run/packages/entry" },
     { "path": "./packages/sandbox/sandbox" },

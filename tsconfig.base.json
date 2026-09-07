@@ -83,6 +83,7 @@
       "@deepseek-ai/dsh-agent-presets/types": ["./packages/preset/agent-presets/src/types.ts"],
       "@deepseek-ai/dsh-agent-presets/display": ["./packages/preset/agent-presets/src/display.ts"],
       "@deepseek-ai/dsh-pwsh-local": ["./packages/shell/pwsh-local/src/index.ts"],
+      "@deepseek-ai/dsh-tool-git": ["./packages/shell/tool-git/src/index.ts"],
       "@deepseek-ai/dsh-tool-pwsh": ["./packages/shell/tool-pwsh/src/index.ts"],
       "@deepseek-ai/dsh-shell-env": ["./packages/shell/shell-env/src/index.ts"],
       "@deepseek-ai/dsh-cordis-host-runner": ["./packages/extensions/cordis-host-runner/src/index.ts"],

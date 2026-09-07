@@ -102,7 +102,7 @@ function ruleLineOf(pending: PendingApproval): { line: string; target: string } 
   // ceiling never grants full access); the remembered scope is the exact
   // command prefix.
   if (context.mode === 'trusted-roots'
-    && (pending.toolName === 'bash' || pending.toolName === 'pwsh')
+    && (pending.toolName === 'bash' || pending.toolName === 'pwsh' || pending.toolName === 'git')
     && context.command !== undefined) {
     return { line: '/permission-rule add ' + pending.toolName + ' ' + context.command, target: context.command }
   }

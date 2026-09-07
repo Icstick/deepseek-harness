@@ -28,7 +28,7 @@ import type {} from '@deepseek-ai/dsh-commands'
  * The closed tool vocabulary a rule may gate. Fs tools match by target
  * path; shell tools match by command prefix.
  */
-export const RULE_TOOLS = ['write', 'edit', 'bash', 'pwsh'] as const
+export const RULE_TOOLS = ['write', 'edit', 'bash', 'pwsh', 'git'] as const
 
 export type RuleTool = typeof RULE_TOOLS[number]
 
@@ -97,7 +97,7 @@ export function matchesRule(rule: ApprovalRule, request: RuleRequestFace): boole
     if (target === undefined) return false
     return pathRootContains(rule, target)
   }
-  if (rule.tool !== 'bash' && rule.tool !== 'pwsh') return false
+  if (rule.tool !== 'bash' && rule.tool !== 'pwsh' && rule.tool !== 'git') return false
   if (request.toolName !== rule.tool) return false
   const command = context.command
   return command !== undefined && command.startsWith(rule.match)
@@ -190,10 +190,10 @@ export class ApprovalRuleService extends Service {
           const rule: ApprovalRule = {
             id: randomUUID(),
             tool: tool as RuleTool,
-            kind: tool === 'bash' || tool === 'pwsh' ? 'command-prefix' : 'path-root',
+            kind: tool === 'bash' || tool === 'pwsh' || tool === 'git' ? 'command-prefix' : 'path-root',
             // Resolve relative path roots against the session cwd so the rule
             // is stable for the session.
-            match: tool === 'bash' || tool === 'pwsh' ? target : resolve(session.header.cwd ?? process.cwd(), target),
+            match: tool === 'bash' || tool === 'pwsh' || tool === 'git' ? target : resolve(session.header.cwd ?? process.cwd(), target),
             mode: 'trusted-roots',
             createdAt: Date.now(),
           }
