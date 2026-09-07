@@ -185,8 +185,6 @@ describe('sandbox:policy request context', () => {
       'danger-full-access': 'Current DSH file policy: danger-full-access. The DSH file sandbox does not restrict file modifications by available operations.',
     } as const
 
-    if (mode === 'trusted-roots') throw new Error('unreachable: trusted-roots has its own rendering tests')
-
     expect(await policyContext(ctx, session(`sess-${mode}`, '/projects/../projects/current'))).toBe(expected[mode])
   })
 
