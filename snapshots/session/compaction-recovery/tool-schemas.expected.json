@@ -31,6 +31,7 @@
             "description": "The wider sandbox mode this command needs. Only valid as a one-shot retry of a command the sandbox just denied; requires justification and user approval.",
             "enum": [
               "workspace-write",
+              "trusted-roots",
               "danger-full-access"
             ]
           },
@@ -92,6 +93,7 @@
             "description": "The wider sandbox mode this file operation needs. Only valid as a one-shot retry of an operation the sandbox just denied; requires justification and user approval.",
             "enum": [
               "workspace-write",
+              "trusted-roots",
               "danger-full-access"
             ]
           },
@@ -700,6 +702,7 @@
             "description": "The wider sandbox mode this file operation needs. Only valid as a one-shot retry of an operation the sandbox just denied; requires justification and user approval.",
             "enum": [
               "workspace-write",
+              "trusted-roots",
               "danger-full-access"
             ]
           },
@@ -748,6 +751,7 @@
               "description": "The wider sandbox mode this command needs. Only valid as a one-shot retry of a command the sandbox just denied; requires justification and user approval.",
               "enum": [
                 "workspace-write",
+                "trusted-roots",
                 "danger-full-access"
               ]
             },
@@ -809,6 +813,7 @@
               "description": "The wider sandbox mode this file operation needs. Only valid as a one-shot retry of an operation the sandbox just denied; requires justification and user approval.",
               "enum": [
                 "workspace-write",
+                "trusted-roots",
                 "danger-full-access"
               ]
             },
@@ -1417,6 +1422,7 @@
               "description": "The wider sandbox mode this file operation needs. Only valid as a one-shot retry of an operation the sandbox just denied; requires justification and user approval.",
               "enum": [
                 "workspace-write",
+                "trusted-roots",
                 "danger-full-access"
               ]
             },

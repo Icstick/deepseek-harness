@@ -15,7 +15,7 @@ import SandboxPolicyService, { SANDBOX_MODES, setSandboxMode } from '@deepseek-a
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SystemPrompt, { renderContextSnapshot, renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 
-async function mounted(config: { mode?: 'read-only' | 'workspace-write' | 'danger-full-access'; workspaceRoot?: string } = {}) {
+async function mounted(config: { mode?: 'read-only' | 'workspace-write' | 'trusted-roots' | 'danger-full-access'; workspaceRoot?: string; extraWritableRoots?: string[] } = {}) {
   const ctx = new Context()
   await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(SandboxPolicyService, config)
@@ -126,6 +126,25 @@ describe('SandboxPolicyService', () => {
     expect(ctx.sandboxPolicy.resolve({ session: session('sess-no-cwd') }).workspaceRoot).toBe(resolve('/fallback'))
   })
 
+  it('trusted-roots resolves the configured extra writable roots canonical', async () => {
+    const ctx = await mounted({ mode: 'trusted-roots', workspaceRoot: '/ws', extraWritableRoots: ['/extra/../extra-a', '/extra-b'] })
+    expect(ctx.sandboxPolicy.extraWritableRoots).toEqual([resolve('/extra-a'), resolve('/extra-b')])
+    expect(ctx.sandboxPolicy.resolve()).toEqual({
+      mode: 'trusted-roots',
+      workspaceRoot: resolve('/ws'),
+      extraWritableRoots: [resolve('/extra-a'), resolve('/extra-b')],
+    })
+  })
+
+  it('keeps configured extra roots attached to workspace-write policies (enforcement consumes them only under trusted-roots)', async () => {
+    const ctx = await mounted({ mode: 'workspace-write', workspaceRoot: '/ws', extraWritableRoots: ['/extra-a'] })
+    expect(ctx.sandboxPolicy.resolve()).toEqual({
+      mode: 'workspace-write',
+      workspaceRoot: resolve('/ws'),
+      extraWritableRoots: [resolve('/extra-a')],
+    })
+  })
+
   it('rejects a mode outside the closed vocabulary at load', async () => {
     const ctx = new Context()
     // Config validation runs when the fiber activates, and the policy seam
@@ -149,7 +168,7 @@ describe('SandboxPolicyService', () => {
 })
 
 describe('sandbox:policy request context', () => {
-  async function promptMounted(config: { mode?: 'read-only' | 'workspace-write' | 'danger-full-access'; workspaceRoot?: string } = {}): Promise<Context> {
+  async function promptMounted(config: { mode?: 'read-only' | 'workspace-write' | 'trusted-roots' | 'danger-full-access'; workspaceRoot?: string; extraWritableRoots?: string[] } = {}): Promise<Context> {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(SessionProjectionRegistry)
@@ -166,7 +185,23 @@ describe('sandbox:policy request context', () => {
       'danger-full-access': 'Current DSH file policy: danger-full-access. The DSH file sandbox does not restrict file modifications by available operations.',
     } as const
 
+    if (mode === 'trusted-roots') throw new Error('unreachable: trusted-roots has its own rendering tests')
+
     expect(await policyContext(ctx, session(`sess-${mode}`, '/projects/../projects/current'))).toBe(expected[mode])
+  })
+
+  it('renders the trusted-roots policy with the configured extra roots', async () => {
+    const ctx = await promptMounted({ mode: 'trusted-roots', workspaceRoot: '/fallback', extraWritableRoots: ['/extra-a'] })
+    const workspaceRoot = resolve('/projects/current')
+    const text = await policyContext(ctx, session('sess-trusted-roots', '/projects/current'))
+    expect(text).toBe(`Current DSH file policy: trusted-roots. Operations enforced by the DSH file sandbox may modify files under the session workspace: ${JSON.stringify(workspaceRoot)}, plus the configured trusted roots: ${JSON.stringify([resolve('/extra-a')])}. Some platform temporary areas may also be writable.`)
+  })
+
+  it('renders trusted-roots without extra roots identically to its extra list being empty', async () => {
+    const ctx = await promptMounted({ mode: 'trusted-roots' })
+    const workspaceRoot = resolve('/projects/current')
+    const text = await policyContext(ctx, session('sess-trusted-roots-empty', '/projects/current'))
+    expect(text).toBe(`Current DSH file policy: trusted-roots. Operations enforced by the DSH file sandbox may modify files under the session workspace: ${JSON.stringify(workspaceRoot)}, plus the configured trusted roots: []. Some platform temporary areas may also be writable.`)
   })
 
   it('keeps the complete rendered prompt byte-stable across TMPDIR changes', async () => {
@@ -217,7 +252,7 @@ describe('sandbox:policy request context', () => {
 
 describe('the sandbox/mode session kit', () => {
   it('SANDBOX_MODES lists every mode for advertisement and validation', () => {
-    expect(SANDBOX_MODES).toEqual(['read-only', 'workspace-write', 'danger-full-access'])
+    expect(SANDBOX_MODES).toEqual(['read-only', 'workspace-write', 'trusted-roots', 'danger-full-access'])
   })
 
   it('the sandboxMode projection folds to the last switch, or null without one', async () => {

@@ -101,7 +101,8 @@ describe('PermissionPresetService', () => {
 
   it('advertises the preset table in declaration order and resolves bundles', async () => {
     const ctx = await mounted()
-    expect(ctx.permissionPresets.names).toEqual(['workspace-write', 'danger-full-access'])
+    expect(ctx.permissionPresets.names).toEqual(['workspace-write', 'trusted-roots', 'danger-full-access'])
+    expect(ctx.permissionPresets.resolve('trusted-roots')).toMatchObject({ sandbox: 'trusted-roots', approval: 'ask' })
     expect(ctx.permissionPresets.resolve('danger-full-access')).toMatchObject({ sandbox: 'danger-full-access', approval: 'never' })
     expect(() => ctx.permissionPresets.resolve('plan')).toThrow(/unknown preset "plan"/)
   })
