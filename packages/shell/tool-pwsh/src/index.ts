@@ -220,6 +220,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   const approvePwshEscalation = (
     mode: string,
     justification: string,
+    command: string,
     exec: ToolExecution,
     standingPolicy: SandboxExecutionPolicy | undefined,
   ): Promise<SandboxMode> => {
@@ -228,7 +229,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     }
     const effectiveMode = (standingPolicy as SandboxExecutionPolicy).mode
     return approveEscalation(
-      { requestedMode: mode, justification, effectiveMode, subject: 'command' },
+      { requestedMode: mode, justification, effectiveMode, subject: 'command', context: { command } },
       {
         approver: ctx.get('approval'),
         agent: exec.agent,
@@ -348,7 +349,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       // Description is display metadata; workdir defaults to the caller's session.
       const standingPolicy = resolveSandboxPolicy(exec)
       const approvedMode = args.sandbox_permissions !== undefined && args.justification !== undefined
-        ? await approvePwshEscalation(args.sandbox_permissions, args.justification, exec, standingPolicy)
+        ? await approvePwshEscalation(args.sandbox_permissions, args.justification, args.command, exec, standingPolicy)
         : undefined
       const policy = approvedMode === undefined
         ? standingPolicy

@@ -1330,6 +1330,7 @@ describe('command launcher chrome and control seats', () => {
       options: [
         { value: 'read-only', name: 'read-only' },
         { value: 'workspace-write', name: 'workspace-write' },
+        { value: 'trusted-roots', name: 'trusted-roots' },
         { value: 'danger-full-access', name: 'danger-full-access' },
       ],
       currentValue: 'read-only',
@@ -1342,7 +1343,9 @@ describe('command launcher chrome and control seats', () => {
       .every(icon => icon.closest('[aria-hidden="true"]') !== null)).toBe(true)
     fireEvent.click(trigger)
     const items = view.getAllByRole('menuitem')
-    expect(items.map(o => o.textContent)).toEqual(['仅可查看', '工作区内修改', '完全权限'])
+    expect(items.map(o => o.textContent)).toEqual(['仅可查看', '工作区内修改', '信任目录内修改', '完全权限'])
+    // The trusted-roots glyph rides the same shield design set as its siblings.
+    expect(items[2]!.querySelector('svg')).not.toBeNull()
     fireEvent.click(items[1]!)
     // Optimistic pick + disable until admission resolves (command stub resolves true).
     const busy = view.getByLabelText(/^访问模式/) as HTMLButtonElement
