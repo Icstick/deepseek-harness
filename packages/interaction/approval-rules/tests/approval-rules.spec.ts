@@ -42,7 +42,7 @@ async function mounted(): Promise<Context> {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
   await ctx.plugin(ApprovalService)
-  await ctx.plugin(ApprovalRuleService, {})
+  await ctx.plugin(ApprovalRuleService)
   return ctx
 }
 
@@ -164,7 +164,7 @@ describe('the /permission-rule command', () => {
     await ctx.plugin(SessionStore)
     await ctx.plugin(CommandRuntime)
     await ctx.plugin(ApprovalService)
-    await ctx.plugin(ApprovalRuleService, {})
+    await ctx.plugin(ApprovalRuleService)
     const session = ctx.sessions.create(SessionId('rules-cmd'))
     const agent = { id: session.id, session } as unknown as Agent
     await ctx.plugin(Object.assign((inner: Context) => { createScope(inner, agent) }, { inject: ['commands'] }))
@@ -194,7 +194,8 @@ describe('the /permission-rule command', () => {
   it('lists and removes rules; unknown verbs and tools error without touching the log', async () => {
     const { ctx, agent } = await commandHarness()
     const empty = await ctx.commands.execute(agent, '/permission-rule', [], new AbortController().signal)
-    expect(empty?.result).toMatchObject({ kind: 'success', text: expect.stringContaining('no session approval rules') })
+    expect(empty?.result?.kind).toBe('success')
+    expect(empty?.result?.text).toContain('no session approval rules')
     const bad = await ctx.commands.execute(agent, '/permission-rule add code foo', [], new AbortController().signal)
     expect(bad?.result).toMatchObject({ kind: 'error' })
     const badVerb = await ctx.commands.execute(agent, '/permission-rule explode', [], new AbortController().signal)

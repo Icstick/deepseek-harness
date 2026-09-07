@@ -747,7 +747,7 @@ export type Config = LocalConfig
 
 依赖：[`LocalConfig`](#deepseek-aidsh-fs-local)
 
-来源：[`packages/fs/fs-sandbox/src/index.ts:45`](../packages/fs/fs-sandbox/src/index.ts)
+来源：[`packages/fs/fs-sandbox/src/index.ts:46`](../packages/fs/fs-sandbox/src/index.ts)
 
 <a id="deepseek-aidsh-goal"></a>
 
@@ -1739,12 +1739,21 @@ export interface Config {
    * `process.cwd()`). Normal agent calls use their session cwd instead.
    */
   workspaceRoot?: string
+  /**
+   * Additional writable roots a `trusted-roots` session may write under, on
+   * top of its workspace root (default: none — `trusted-roots` then equals
+   * `workspace-write`). Canonicalized at construction. Consumed by the
+   * shared writable-root derivation, so every enforcement dialect
+   * (filesystem fence, Seatbelt, Landlock/bwrap, Windows ACL) sees the same
+   * allow-list.
+   */
+  extraWritableRoots?: string[]
 }
 ```
 
 依赖：[`SandboxMode`](subsystems/sandbox.zh.md)
 
-来源：[`packages/sandbox/sandbox-policy/src/index.ts:70`](../packages/sandbox/sandbox-policy/src/index.ts)
+来源：[`packages/sandbox/sandbox-policy/src/index.ts:72`](../packages/sandbox/sandbox-policy/src/index.ts)
 
 <a id="deepseek-aidsh-sdk-app"></a>
 
@@ -2697,6 +2706,31 @@ export interface Config {
 
 来源：[`packages/fs/tool-fs-search/src/index.ts:73`](../packages/fs/tool-fs-search/src/index.ts)
 
+<a id="deepseek-aidsh-tool-git"></a>
+
+## `@deepseek-ai/dsh-tool-git`
+
+需要：`tools` · `sandbox` · `sandboxPolicy`
+
+```ts config-catalog
+/** Tool plugin config. */
+export interface Config {
+  /** Absolute path to git.exe; auto-detected from PATH when omitted. */
+  gitPath?: string
+  /**
+   * Absolute path to a git global config file to force via GIT_CONFIG_GLOBAL.
+   * Point it INSIDE a writable root (e.g. the dsh home) so confined git can
+   * persist safe.directory and credential settings without touching the
+   * user profile; the file should include.path the user's own config.
+   */
+  gitConfigGlobal?: string
+  /** Default working directory for git invocations. */
+  cwd?: string
+}
+```
+
+来源：[`packages/shell/tool-git/src/index.ts:27`](../packages/shell/tool-git/src/index.ts)
+
 <a id="deepseek-aidsh-tool-goal"></a>
 
 ## `@deepseek-ai/dsh-tool-goal`
@@ -3116,7 +3150,7 @@ export interface Config {
 export type ApprovalPolicy = 'ask' | 'never'
 ```
 
-来源：[`packages/interaction/user-approval/src/index.ts:126`](../packages/interaction/user-approval/src/index.ts)
+来源：[`packages/interaction/user-approval/src/index.ts:129`](../packages/interaction/user-approval/src/index.ts)
 
 <a id="deepseek-aidsh-web"></a>
 
@@ -3326,6 +3360,7 @@ export interface Config {
 - `@deepseek-ai/dsh-agent`（[`packages/core/agent/src/index.ts`](../packages/core/agent/src/index.ts)）
 - `@deepseek-ai/dsh-api-remotes` — 需要 `typertGateway`（[`packages/api/remotes/src/index.ts`](../packages/api/remotes/src/index.ts)）
 - `@deepseek-ai/dsh-api-workspace-controller` — 需要 `typert` · `workspaceRegistry`（[`packages/api/workspace-controller/src/index.ts`](../packages/api/workspace-controller/src/index.ts)）
+- `@deepseek-ai/dsh-approval-rules` — 需要 `sessions`（[`packages/interaction/approval-rules/src/index.ts`](../packages/interaction/approval-rules/src/index.ts)）
 - `@deepseek-ai/dsh-authorization` — 需要 `credentials`（[`packages/credentials/authorization/src/index.ts`](../packages/credentials/authorization/src/index.ts)）
 - `@deepseek-ai/dsh-client-file-upload` — 需要 `agents` · `attachments` · `commands` · `connection`（[`packages/client/file-upload/src/index.ts`](../packages/client/file-upload/src/index.ts)）
 - `@deepseek-ai/dsh-client-locale`（[`packages/client/locale/src/index.ts`](../packages/client/locale/src/index.ts)）

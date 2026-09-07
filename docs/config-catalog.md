@@ -745,7 +745,7 @@ export type Config = LocalConfig
 
 Depends on: [`LocalConfig`](#deepseek-aidsh-fs-local)
 
-Source: [`packages/fs/fs-sandbox/src/index.ts:45`](../packages/fs/fs-sandbox/src/index.ts)
+Source: [`packages/fs/fs-sandbox/src/index.ts:46`](../packages/fs/fs-sandbox/src/index.ts)
 
 <a id="deepseek-aidsh-goal"></a>
 
@@ -1737,12 +1737,21 @@ export interface Config {
    * `process.cwd()`). Normal agent calls use their session cwd instead.
    */
   workspaceRoot?: string
+  /**
+   * Additional writable roots a `trusted-roots` session may write under, on
+   * top of its workspace root (default: none — `trusted-roots` then equals
+   * `workspace-write`). Canonicalized at construction. Consumed by the
+   * shared writable-root derivation, so every enforcement dialect
+   * (filesystem fence, Seatbelt, Landlock/bwrap, Windows ACL) sees the same
+   * allow-list.
+   */
+  extraWritableRoots?: string[]
 }
 ```
 
 Depends on: [`SandboxMode`](subsystems/sandbox.md)
 
-Source: [`packages/sandbox/sandbox-policy/src/index.ts:70`](../packages/sandbox/sandbox-policy/src/index.ts)
+Source: [`packages/sandbox/sandbox-policy/src/index.ts:72`](../packages/sandbox/sandbox-policy/src/index.ts)
 
 <a id="deepseek-aidsh-sdk-app"></a>
 
@@ -2695,6 +2704,31 @@ export interface Config {
 
 Source: [`packages/fs/tool-fs-search/src/index.ts:73`](../packages/fs/tool-fs-search/src/index.ts)
 
+<a id="deepseek-aidsh-tool-git"></a>
+
+## `@deepseek-ai/dsh-tool-git`
+
+Requires: `tools` · `sandbox` · `sandboxPolicy`
+
+```ts config-catalog
+/** Tool plugin config. */
+export interface Config {
+  /** Absolute path to git.exe; auto-detected from PATH when omitted. */
+  gitPath?: string
+  /**
+   * Absolute path to a git global config file to force via GIT_CONFIG_GLOBAL.
+   * Point it INSIDE a writable root (e.g. the dsh home) so confined git can
+   * persist safe.directory and credential settings without touching the
+   * user profile; the file should include.path the user's own config.
+   */
+  gitConfigGlobal?: string
+  /** Default working directory for git invocations. */
+  cwd?: string
+}
+```
+
+Source: [`packages/shell/tool-git/src/index.ts:27`](../packages/shell/tool-git/src/index.ts)
+
 <a id="deepseek-aidsh-tool-goal"></a>
 
 ## `@deepseek-ai/dsh-tool-goal`
@@ -3114,7 +3148,7 @@ export interface Config {
 export type ApprovalPolicy = 'ask' | 'never'
 ```
 
-Source: [`packages/interaction/user-approval/src/index.ts:127`](../packages/interaction/user-approval/src/index.ts)
+Source: [`packages/interaction/user-approval/src/index.ts:129`](../packages/interaction/user-approval/src/index.ts)
 
 <a id="deepseek-aidsh-web"></a>
 
@@ -3324,6 +3358,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-agent` ([`packages/core/agent/src/index.ts`](../packages/core/agent/src/index.ts))
 - `@deepseek-ai/dsh-api-remotes` — requires `typertGateway` ([`packages/api/remotes/src/index.ts`](../packages/api/remotes/src/index.ts))
 - `@deepseek-ai/dsh-api-workspace-controller` — requires `typert` · `workspaceRegistry` ([`packages/api/workspace-controller/src/index.ts`](../packages/api/workspace-controller/src/index.ts))
+- `@deepseek-ai/dsh-approval-rules` — requires `sessions` ([`packages/interaction/approval-rules/src/index.ts`](../packages/interaction/approval-rules/src/index.ts))
 - `@deepseek-ai/dsh-authorization` — requires `credentials` ([`packages/credentials/authorization/src/index.ts`](../packages/credentials/authorization/src/index.ts))
 - `@deepseek-ai/dsh-client-file-upload` — requires `agents` · `attachments` · `commands` · `connection` ([`packages/client/file-upload/src/index.ts`](../packages/client/file-upload/src/index.ts))
 - `@deepseek-ai/dsh-client-locale` ([`packages/client/locale/src/index.ts`](../packages/client/locale/src/index.ts))

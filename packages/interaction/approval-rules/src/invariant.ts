@@ -31,8 +31,11 @@ function validateEvent(event: SessionEvent, fail: InvariantFailure): void {
     if (!Array.isArray(event.data.rules) || !event.data.rules.every(validRule)) {
       fail('approval/rules carries a malformed rule set')
     }
-    if (event.data.source !== undefined && event.data.source !== 'user' && event.data.source !== 'delegation') {
-      fail('approval/rules carries an unknown source ' + JSON.stringify(event.data.source))
+    // Replayed events are untrusted data: widen past the static union so a
+    // future or corrupt source value is caught at runtime, not type-erased.
+    const source: unknown = event.data.source
+    if (source !== undefined && source !== 'user' && source !== 'delegation') {
+      fail(`approval/rules carries an unknown source ${JSON.stringify(source)}`)
     }
   }
   if (event.type === 'approval/rule-hit'

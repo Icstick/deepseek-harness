@@ -140,7 +140,7 @@ declare module '@deepseek-ai/dsh-session/types' {
 export class ApprovalRuleService extends Service {
   static inject = ['sessions']
 
-  constructor(ctx: Context, _config: Record<string, never>) {
+  constructor(ctx: Context) {
     super(ctx, 'approvalRules')
     // Prepend: the rule answerer must run BEFORE the remote bridge forwards
     // the ask to the GUI — a matched rule means the human never sees a
@@ -177,7 +177,7 @@ export class ApprovalRuleService extends Service {
             return { kind: 'success', text: 'rule ' + id + ' removed' }
           }
           if (verb !== 'add') {
-            return { kind: 'error', text: 'unknown verb ' + verb + ' (available: add, list, remove)' }
+            return { kind: 'error', text: 'unknown verb ' + String(verb) + ' (available: add, list, remove)' }
           }
           const tool = rest[0]
           const target = rest.slice(1).join(' ')
@@ -230,7 +230,7 @@ export class ApprovalRuleService extends Service {
    * command-prefix rules cannot gate individual paths).
    */
   matchesPath(sessionId: string, path: string): boolean {
-    const session = this.ctx.sessions.list().find(candidate => String(candidate.id) === String(sessionId))
+    const session = this.ctx.sessions.list().find(candidate => candidate.id === sessionId)
     if (session === undefined) return false
     return this.rulesOf(session).some(rule =>
       rule.kind === 'path-root'
