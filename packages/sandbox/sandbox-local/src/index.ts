@@ -367,13 +367,18 @@ export class LocalSandboxProvider extends SandboxProvider {
   private windowsAclRunnerArgv(policy: SandboxPolicy): string[] {
     const sessionId = policy.sessionId
     const trustedRoots = policy.mode === 'trusted-roots' ? (policy.extraWritableRoots ?? []) : []
+    // trusted-roots without configured extra roots degenerates to
+    // workspace-write: nothing extra to grant, same token shape. The runner
+    // mode argument follows, so a trusted session with an empty or missing
+    // root list still executes (as its workspace-write equivalent).
+    const runnerMode = policy.mode === 'trusted-roots' && trustedRoots.length === 0 ? 'workspace-write' : policy.mode
     const trustedArgs = trustedRoots.flatMap(root => ['--trusted-dir', root])
     if (sessionId === undefined || policy.mode === 'read-only') {
       return [
         ...this.windowsAclRunnerInvocation(),
         '--workspace', policy.workspaceRoot,
         '--temp', tmpdir(),
-        '--mode', policy.mode,
+        '--mode', runnerMode,
         ...trustedArgs,
       ]
     }
@@ -383,7 +388,7 @@ export class LocalSandboxProvider extends SandboxProvider {
       ...this.windowsAclRunnerInvocation(),
       '--workspace', policy.workspaceRoot,
       '--temp', temp.dir,
-      '--mode', policy.mode,
+      '--mode', runnerMode,
       '--write-sid', workspaceWriteSid(policy.workspaceRoot),
       '--temp-write-sid', temp.writeSid,
       ...trustedSid === undefined ? [] : ['--trusted-sid', trustedSid],

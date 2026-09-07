@@ -138,7 +138,10 @@ async function main(): Promise<number> {
   if (confinedWrite && (parsed.writeSid === undefined) !== (parsed.tempWriteSid === undefined)) {
     fail(`${parsed.mode} requires --write-sid and --temp-write-sid together`)
   }
-  if (parsed.mode === 'trusted-roots' && (parsed.trustedSid === undefined) !== (parsed.trustedDirs.length > 0)) {
+  // trusted-roots without extra roots is legitimate: it degenerates to
+  // workspace-write (nothing extra to grant). Only a half-pair (SID without
+  // dirs, or dirs without SID) is a seam bug and fails closed.
+  if (parsed.mode === 'trusted-roots' && (parsed.trustedSid === undefined) !== (parsed.trustedDirs.length === 0)) {
     fail('trusted-roots requires --trusted-sid together with at least one --trusted-dir')
   }
   if (parsed.mode !== 'trusted-roots' && (parsed.trustedSid !== undefined || parsed.trustedDirs.length > 0)) {
