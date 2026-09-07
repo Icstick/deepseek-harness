@@ -232,6 +232,9 @@
       config:
         policy: !!js "(process.env.DSH_PERMISSION_MODE ?? 'workspace-write') === 'danger-full-access' ? 'never' : 'ask'"
 
+    - id: approval-rules
+      name: '@deepseek-ai/dsh-approval-rules'
+
     - id: permission
       name: '@deepseek-ai/dsh-permission-presets'
       config:
