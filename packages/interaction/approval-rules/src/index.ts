@@ -153,9 +153,9 @@ export class ApprovalRuleService extends Service {
         handler: ({ agent, rawInput }) => {
           const session = agent.session
           const text = rawInput.trim()
-          if (text === '') return describeOf(session, service)
+          if (text === '') return describeOf(session, ctx.approvalRules)
           const [verb, ...rest] = text.split(/\s+/)
-          if (verb === 'list') return describeOf(session, service)
+          if (verb === 'list') return describeOf(session, ctx.approvalRules)
           if (verb === 'remove') {
             const id = rest[0] ?? ''
             if (id === '') return { kind: 'error', text: 'permission-rule remove needs a rule id (see: /permission-rule list)' }

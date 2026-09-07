@@ -11,8 +11,10 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import SessionStore from '@deepseek-ai/dsh-session'
+import CommandRuntime from '@deepseek-ai/dsh-commands'
+import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import { createScope } from '@deepseek-ai/dsh-scope'
 import ApprovalService from '@deepseek-ai/dsh-user-approval'
 import ApprovalRuleService,
 { matchesRule, RULE_TOOLS, type ApprovalRule } from '@deepseek-ai/dsh-approval-rules'
@@ -154,5 +156,57 @@ describe('the auto-allow answerer', () => {
 describe('tool vocabulary', () => {
   it('exposes the closed tool list', () => {
     expect(RULE_TOOLS).toEqual(['write', 'edit', 'bash', 'pwsh'])
+  })
+})
+describe('the /permission-rule command', () => {
+  async function commandHarness(): Promise<{ ctx: Context; agent: Agent }> {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(CommandRuntime)
+    await ctx.plugin(ApprovalService)
+    await ctx.plugin(ApprovalRuleService, {})
+    const session = ctx.sessions.create(SessionId('rules-cmd'))
+    const agent = { id: session.id, session } as unknown as Agent
+    await ctx.plugin(Object.assign((inner: Context) => { createScope(inner, agent) }, { inject: ['commands'] }))
+    return { ctx, agent }
+  }
+
+  it('adds a path-root rule for fs tools, resolving the target and appending the full set', async () => {
+    const { ctx, agent } = await commandHarness()
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-rules-cmd-'))
+    const execution = await ctx.commands.execute(agent, '/permission-rule add write ' + dir, [], new AbortController().signal)
+    expect(execution?.result?.kind).toBe('success')
+    const rules = ctx.approvalRules.rulesOf(agent.session)
+    expect(rules).toHaveLength(1)
+    expect(rules[0]).toMatchObject({ tool: 'write', kind: 'path-root', mode: 'trusted-roots', match: dir })
+    expect(agent.session.snapshotEvents().some(event => event.type === 'approval/rules')).toBe(true)
+  })
+
+  it('adds a command-prefix rule for shell tools', async () => {
+    const { ctx, agent } = await commandHarness()
+    const execution = await ctx.commands.execute(agent, '/permission-rule add pwsh pnpm build', [], new AbortController().signal)
+    expect(execution?.result?.kind).toBe('success')
+    expect(ctx.approvalRules.rulesOf(agent.session)).toEqual([
+      expect.objectContaining({ tool: 'pwsh', kind: 'command-prefix', match: 'pnpm build' }),
+    ])
+  })
+
+  it('lists and removes rules; unknown verbs and tools error without touching the log', async () => {
+    const { ctx, agent } = await commandHarness()
+    const empty = await ctx.commands.execute(agent, '/permission-rule', [], new AbortController().signal)
+    expect(empty?.result).toMatchObject({ kind: 'success', text: expect.stringContaining('no session approval rules') })
+    const bad = await ctx.commands.execute(agent, '/permission-rule add code foo', [], new AbortController().signal)
+    expect(bad?.result).toMatchObject({ kind: 'error' })
+    const badVerb = await ctx.commands.execute(agent, '/permission-rule explode', [], new AbortController().signal)
+    expect(badVerb?.result).toMatchObject({ kind: 'error' })
+    expect(ctx.approvalRules.rulesOf(agent.session)).toHaveLength(0)
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-rules-cmd2-'))
+    await ctx.commands.execute(agent, '/permission-rule add edit ' + dir, [], new AbortController().signal)
+    const id = ctx.approvalRules.rulesOf(agent.session)[0]!.id
+    const miss = await ctx.commands.execute(agent, '/permission-rule remove nope', [], new AbortController().signal)
+    expect(miss?.result).toMatchObject({ kind: 'error' })
+    const removed = await ctx.commands.execute(agent, '/permission-rule remove ' + id, [], new AbortController().signal)
+    expect(removed?.result?.kind).toBe('success')
+    expect(ctx.approvalRules.rulesOf(agent.session)).toHaveLength(0)
   })
 })
