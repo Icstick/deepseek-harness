@@ -28,6 +28,7 @@ kind: "package-group"
 |---|---|---|
 | [`commands/`](commands/README.zh.md) | 让用户输入斜杠命令，直接针对 agent 执行，无需模型往返 | `ctx.commands` |
 | [`user-approval/`](user-approval/README.zh.md) | 向已组合的应答者征求一次性允许／拒绝决定，缺失时以拒绝方式关闭 | `ctx.approval` |
+| [`approval-rules/`](approval-rules/README.zh.md) | 让用户为单个会话自动放行匹配的提权请求（上限：trusted-roots） | `ctx.approvalRules` |
 | [`permission-presets/`](permission-presets/README.zh.md) | 把沙箱模式与审批策略捆绑为一个面向用户的权限选择器 | `ctx.permissionPresets` |
 | [`user-questions/`](user-questions/README.zh.md) | 定义经过校验的问题 schema 与作用域 answerer waterfall，agent 可暂停等待 | `ctx.userQuestions` |
 | [`tool-ask-user/`](tool-ask-user/README.zh.md) | 暴露 `ask_user_question` 工具，让模型可以向用户提问 | 注册到 `ctx.tools` |
