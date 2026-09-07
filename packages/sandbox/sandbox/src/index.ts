@@ -23,10 +23,12 @@ export { canonicalPath, writableRoots } from './roots.ts'
 /**
  * File-effect policy for confined processes. `read-only` permits only required
  * sinks such as `/dev/null`; `workspace-write` also permits the workspace and a
- * backend-defined temp area; `danger-full-access` bypasses confinement. Network
- * and process visibility are outside this vocabulary.
+ * backend-defined temp area; `trusted-roots` additionally permits the policy's
+ * configured extra writable roots (`extraWritableRoots` — a strictly wider
+ * workspace-write); `danger-full-access` bypasses confinement. Network and
+ * process visibility are outside this vocabulary.
  */
-export type SandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access'
+export type SandboxMode = 'read-only' | 'workspace-write' | 'trusted-roots' | 'danger-full-access'
 
 /** A confining (non-`danger-full-access`) mode — the modes a {@link SandboxPolicy} can carry. */
 export type ConfinedSandboxMode = Exclude<SandboxMode, 'danger-full-access'>
@@ -41,6 +43,13 @@ export interface SandboxExecutionPolicy {
   mode: SandboxMode
   /** Absolute root directory `workspace-write` may write under. */
   workspaceRoot: string
+  /**
+   * Additional writable roots consumed by `trusted-roots` (absolute,
+   * canonical, deployment-wide in v1). Omitted outside `trusted-roots`; a
+   * policy with no extra roots leaves the mode equivalent to
+   * `workspace-write`.
+   */
+  extraWritableRoots?: readonly string[]
   /**
    * Opaque identity of the calling session (the branded `dsh-session`
    * SessionId). Backends key per-session state off it (e.g. windows-acl gives

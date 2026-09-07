@@ -7,17 +7,20 @@ export const FULL_ACCESS_PRESET = 'danger-full-access'
 export type PermissionPresetLabelKey =
   | 'preset.readOnly'
   | 'preset.workspaceWrite'
+  | 'preset.trustedRoots'
   | 'preset.fullAccess'
 
 const PRESET_LABEL_KEYS = new Map<string, PermissionPresetLabelKey>([
   ['read-only', 'preset.readOnly'],
   ['workspace-write', 'preset.workspaceWrite'],
+  ['trusted-roots', 'preset.trustedRoots'],
   [FULL_ACCESS_PRESET, 'preset.fullAccess'],
 ])
 
 const DEFAULT_PRESET_LABELS: Record<PermissionPresetLabelKey, string> = {
   'preset.readOnly': en['preset.readOnly'],
   'preset.workspaceWrite': en['preset.workspaceWrite'],
+  'preset.trustedRoots': en['preset.trustedRoots'],
   'preset.fullAccess': en['preset.fullAccess'],
 }
 

@@ -44,6 +44,8 @@ function renderPolicyContext(policy: SandboxExecutionPolicy): string {
       return 'Current DSH file policy: read-only. Any available operation enforced by the DSH file sandbox cannot modify files in the standing mode. Do not refuse a required modification from this policy alone: try an available tool normally and follow any denial and escalation guidance it returns.'
     case 'workspace-write':
       return `Current DSH file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify files under the session workspace: ${JSON.stringify(policy.workspaceRoot)}. Some platform temporary areas may also be writable.`
+    case 'trusted-roots':
+      return `Current DSH file policy: trusted-roots. Operations enforced by the DSH file sandbox may modify files under the session workspace: ${JSON.stringify(policy.workspaceRoot)}, plus the configured trusted roots: ${JSON.stringify(policy.extraWritableRoots ?? [])}. Some platform temporary areas may also be writable.`
     case 'danger-full-access':
       return 'Current DSH file policy: danger-full-access. The DSH file sandbox does not restrict file modifications by available operations.'
     /* v8 ignore next 4 -- SandboxMode is a typed same-process closed union; this branch is only the static exhaustiveness guard. */
@@ -75,6 +77,15 @@ export interface Config {
    * `process.cwd()`). Normal agent calls use their session cwd instead.
    */
   workspaceRoot?: string
+  /**
+   * Additional writable roots a `trusted-roots` session may write under, on
+   * top of its workspace root (default: none — `trusted-roots` then equals
+   * `workspace-write`). Canonicalized at construction. Consumed by the
+   * shared writable-root derivation, so every enforcement dialect
+   * (filesystem fence, Seatbelt, Landlock/bwrap, Windows ACL) sees the same
+   * allow-list.
+   */
+  extraWritableRoots?: string[]
 }
 
 /** Inputs that select the sandbox policy for one capability call. */
@@ -89,6 +100,7 @@ export interface SandboxPolicyRequest {
 const sandboxModeStateSchema = zod.union([
   zod.literal('read-only'),
   zod.literal('workspace-write'),
+  zod.literal('trusted-roots'),
   zod.literal('danger-full-access'),
 ]).nullable()
 
@@ -109,10 +121,11 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
 export class SandboxPolicyService extends Service {
   // Inline schema call: the config catalog walks `static Config` statically.
   static Config: z<Config> = z.object({
-    mode: z.union(['read-only', 'workspace-write', 'danger-full-access'] as const).default('read-only'),
+    mode: z.union(['read-only', 'workspace-write', 'trusted-roots', 'danger-full-access'] as const).default('read-only'),
     // No schema default: process.cwd() is resolved in the constructor so the
     // stored root is always absolute regardless of how it was supplied.
     workspaceRoot: z.string(),
+    extraWritableRoots: z.array(z.string()).default([]),
   })
 
   static inject = ['sessionProjections']
@@ -121,13 +134,17 @@ export class SandboxPolicyService extends Service {
   readonly defaultMode: SandboxMode
   /** The absolute `workspace-write` fallback root for calls without a session cwd. */
   readonly workspaceRoot: string
+  /** The canonical `trusted-roots` extra writable roots (deployment-wide). */
+  readonly extraWritableRoots: readonly string[]
   constructor(ctx: Context, config: Config) {
     super(ctx, 'sandboxPolicy')
-    // schemastery (static Config) already filled `mode`; the cast records that
-    // runtime fact. `workspaceRoot` has NO schema default, so its fallback to
-    // the process cwd is real branching, resolved absolute either way.
+    // schemastery (static Config) already filled `mode` and defaulted
+    // `extraWritableRoots`; the casts record those runtime facts.
+    // `workspaceRoot` has NO schema default, so its fallback to the process
+    // cwd is real branching, resolved absolute either way.
     this.defaultMode = config.mode as SandboxMode
     this.workspaceRoot = resolveWorkspaceRoot(config.workspaceRoot ?? process.cwd())
+    this.extraWritableRoots = (config.extraWritableRoots ?? []).map(resolveWorkspaceRoot)
 
     ctx.sessionProjections.register({
       key: 'sandboxMode',
@@ -165,6 +182,9 @@ export class SandboxPolicyService extends Service {
     return {
       mode: request.mode ?? (session === undefined ? undefined : this.overrideOf(session)) ?? this.defaultMode,
       workspaceRoot: resolveWorkspaceRoot(session?.header.cwd ?? this.workspaceRoot),
+      // Trusted roots are deployment-wide (never per-session in v1); an empty
+      // list is omitted so `workspace-write` policies stay unchanged.
+      ...this.extraWritableRoots.length === 0 ? {} : { extraWritableRoots: this.extraWritableRoots },
       ...session === undefined ? {} : { sessionId: session.id },
     }
   }
