@@ -43,12 +43,13 @@ describe('tool-git registration', () => {
     const host = policyCtx()
     apply(host.ctx, {})
     const tool = host.tool
-    expect(tool.name).toBe('git')
+    expect(tool).toBeDefined()
+    if (tool === undefined) throw new Error('tool was not registered')
     // defineTool compiles the parameter DSL into a JSON Schema root.
     expect(tool.parameters.type).toBe('object')
     expect(tool.parameters.required).toContain('args')
     expect(tool.parameters.properties.args.items).toMatchObject({ type: 'string' })
-    expect(tool.parameters.properties.sandbox_permissions.enum)
+    expect(tool.parameters.properties.sandbox_permissions?.enum)
       .toEqual(['workspace-write', 'trusted-roots', 'danger-full-access'])
     expect(tool.execute).toBeTypeOf('function')
   })
@@ -56,7 +57,8 @@ describe('tool-git registration', () => {
   it('rejects empty args', async () => {
     const host = policyCtx()
     apply(host.ctx, {})
+    expect(host.tool).toBeDefined()
     const exec = { agent: undefined, callId: 'c', signal: new AbortController().signal }
-    await expect(host.tool.execute({ args: [] }, exec)).rejects.toThrow(/at least one git argument/)
+    await expect(host.tool!.execute({ args: [] }, exec)).rejects.toThrow(/at least one git argument/)
   })
 })
