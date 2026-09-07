@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
-import apply from '@deepseek-ai/dsh-tool-git'
+import * as ToolGit from '@deepseek-ai/dsh-tool-git'
 
 /** The compiled registration surface the assertions read. */
 interface CompiledTool {
@@ -36,12 +36,14 @@ function policyCtx(): { ctx: Context; tool: CompiledTool | undefined } {
 describe('tool-git registration', () => {
   it('refuses to load without a confining composition', () => {
     const ctx = { get: () => undefined, tools: { register: () => {} } } as unknown as Context
-    expect(() => apply(ctx, {})).toThrow(/requires ctx.sandbox and ctx.sandboxPolicy/)
+    expect(() => {
+      ToolGit.apply(ctx, {})
+    }).toThrow(/requires ctx.sandbox and ctx.sandboxPolicy/)
   })
 
   it('registers the git tool and advertises the escalation ladder', () => {
     const host = policyCtx()
-    apply(host.ctx, {})
+    ToolGit.apply(host.ctx, {})
     const tool = host.tool
     expect(tool).toBeDefined()
     if (tool === undefined) throw new Error('tool was not registered')
@@ -56,7 +58,7 @@ describe('tool-git registration', () => {
 
   it('rejects empty args', async () => {
     const host = policyCtx()
-    apply(host.ctx, {})
+    ToolGit.apply(host.ctx, {})
     expect(host.tool).toBeDefined()
     const exec = { agent: undefined, callId: 'c', signal: new AbortController().signal }
     await expect(host.tool!.execute({ args: [] }, exec)).rejects.toThrow(/at least one git argument/)

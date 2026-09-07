@@ -23,7 +23,6 @@ import type { SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandb
 import { ESCALATION_TARGETS, approveEscalation, validateEscalationArgs } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
 
-
 /** Tool plugin config. */
 export interface Config {
   /** Absolute path to git.exe; auto-detected from PATH when omitted. */
@@ -44,6 +43,12 @@ export const Config: z<Config> = z.object({
   gitConfigGlobal: z.string(),
   cwd: z.string(),
 })
+
+/** Stable plugin name used by Cordis diagnostics. */
+export const name = 'tool-git'
+
+/** Services that must be available before the git tool registers. */
+export const inject = ['tools', 'sandbox', 'sandboxPolicy']
 
 /** Parse a git executable path from PATH (host side, unconfined). */
 function detectGitPath(): string | undefined {
@@ -100,9 +105,9 @@ export function apply(ctx: Context, config: Config = {}): void {
   if (sandboxPolicy === undefined || sandbox === undefined) {
     throw new Error('tool-git: requires ctx.sandbox and ctx.sandboxPolicy (no confining composition)')
   }
-  const escalationModes: readonly SandboxMode[] = sandboxPolicy === undefined ? [] : ESCALATION_TARGETS
+  const escalationModes: readonly SandboxMode[] = ESCALATION_TARGETS
   const resolvePolicy = (exec: ToolExecution): SandboxExecutionPolicy | undefined =>
-    sandboxPolicy?.resolve(exec.agent === undefined ? {} : { session: exec.agent.session })
+    sandboxPolicy.resolve(exec.agent === undefined ? {} : { session: exec.agent.session })
 
   const description = 'Run a git command as a first-class sandboxed process and return its output. Pass the repository-relative subcommand and arguments as a plain array (no shell quoting needed). Git writes stay inside the session sandbox policy: within the workspace and the configured trusted roots (trusted-roots mode) no approval is needed; elsewhere the standard escalation applies. Long output is truncated; check [exit code: N] markers and investigate failures before moving on. ' + (escalationModes.length > 0 ? 'When a command is denied, retry once with sandbox_permissions (the narrowest wider mode that suffices) plus a one-sentence justification.' : '')
 
@@ -188,7 +193,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       const settled = new Promise<GitForegroundResult>((resolve) => {
         const timer = setTimeout(() => {
           child.kill()
-          resolve({ kind: 'foreground', exitCode: null, timedOut: true, stdout: { text: '', truncated: false }, stderr: { text: 'git timed out after ' + timeout + 'ms', truncated: false }, sandbox: { mode: policy.mode, denied: false } })
+          resolve({ kind: 'foreground', exitCode: null, timedOut: true, stdout: { text: '', truncated: false }, stderr: { text: `git timed out after ${timeout}ms`, truncated: false }, sandbox: { mode: policy.mode, denied: false } })
         }, timeout)
         child.on('error', (error) => {
           clearTimeout(timer)
@@ -213,5 +218,3 @@ export function apply(ctx: Context, config: Config = {}): void {
     },
   }))
 }
-
-export default apply

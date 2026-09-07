@@ -20,6 +20,7 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-plan-mode` | `exit_plan_mode` | `ctx.tools`, `ctx.systemPrompt`, `ctx.userQuestions (execution time, opportunistic)` | `tool/call`, `plan/mode inactive on an approved review`, `tool/result` | - | exit_plan_mode stays in the model-facing schema while planning is inactive so transitions add no tool-catalog churn on top of the plan-policy change. Its execute path rejects calls outside plan mode; in plan mode it presents the plan over the user-questions seam (approve / keep planning with feedback), and approval logs plan mode inactive at the step boundary. |
 | `@deepseek-ai/dsh-tool-bash` | `bash` | `ctx.tools`, `ctx.shell`, `ctx.systemPrompt`, `ctx.shellEnv`, `ctx.jobs at call time for run_in_background` | `tool/call`, `tool/result` | - | The bash tool is the model-facing consumer of the bash executor seam. A `run_in_background` run registers with the generic `ctx.jobs` runtime and is collected/stopped through the `job_*` tools from `@deepseek-ai/dsh-tool-jobs`; the `enableRunInBackground` config (default true) removes the parameter entirely when disabled. |
 | `@deepseek-ai/dsh-tool-pwsh` | `pwsh` | `ctx.tools`, `ctx.shell`, `ctx.systemPrompt`, `ctx.shellEnv`, `ctx.jobs at call time for run_in_background` | `tool/call`, `tool/result` | - | The pwsh tool is the PowerShell-dialect consumer of the bash executor seam for Windows compositions (a PowerShell executor such as `@deepseek-ai/dsh-pwsh-local` backs `ctx.shell`); it mirrors the bash tool call-for-call minus sandbox controls — `run_in_background` runs register with the generic `ctx.jobs` runtime and are collected/stopped through the `job_*` tools, and the managed `DSH_*` environment comes from `@deepseek-ai/dsh-shell-env`. Each call runs in a fresh process (no persistent PTY session), with native `C:\...` paths and `$env:NAME` variables. |
+| `@deepseek-ai/dsh-tool-git` | `git` | `ctx.tools`, `ctx.sandbox`, `ctx.sandboxPolicy` | `tool/call`, `Git repository state`, `tool/result` | - | Windows-only in the shipped base composition. Git runs as the directly confined process rather than through PowerShell, so the restricted token does not need to start a native grandchild. |
 | `@deepseek-ai/dsh-tool-cordis` | `cordis_define`, `cordis_inspect_list`, `cordis_inspect_query`, `cordis_inspect_self`, `cordis_run`, `cordis_stop`, `cordis_undefine` | `ctx.tools`, `ctx.dynamicCordisRunner` | `tool/call`, `tool/result`, `process-local dynamic package lifecycle` | - | Not in any shipped tree (a deliberate opt-in — dynamic package code reaches the real runtime, see .agents/notes/implemented/feature/2026-07-08-self-referential-cordis-toolset.md). The toolset injects `ctx.dynamicCordisRunner` from `@deepseek-ai/dsh-cordis-host-runner`, which owns the definition registry and the vm sandbox; a composition missing it never activates the tools. A running package may register ADDITIONAL model-visible tools until it is stopped, undefined, or DSH restarts; a full changed request header logs those tool-set changes. |
 | `@deepseek-ai/dsh-tool-bash-persistent` | `bash` | `ctx.tools`, `ctx.terminals`, `an owning Agent at execution time` | `tool/call`, `PTY shell state`, `tool/result` | - | One owner-isolated persistent bash tool; deployment composition supplies the PTY backend and may override the model-facing environment description. |
 | `@deepseek-ai/dsh-tool-pwsh-persistent` | `pwsh` | `ctx.tools`, `ctx.terminals`, `an owning Agent at execution time` | `tool/call`, `PTY shell state`, `tool/result` | - | One owner-isolated persistent pwsh tool, the Windows counterpart of the persistent bash tool; deployment composition supplies a pwsh-dialect PTY backend and may override the model-facing environment description. |
@@ -261,6 +262,57 @@ Execute a PowerShell command (`pwsh -Command`) and return its stdout/stderr. Eac
 Source: [`packages/shell/tool-pwsh/src/index.ts`](../packages/shell/tool-pwsh/src/index.ts)
 
 The pwsh tool is the PowerShell-dialect consumer of the bash executor seam for Windows compositions (a PowerShell executor such as `@deepseek-ai/dsh-pwsh-local` backs `ctx.shell`); it mirrors the bash tool call-for-call minus sandbox controls — `run_in_background` runs register with the generic `ctx.jobs` runtime and are collected/stopped through the `job_*` tools, and the managed `DSH_*` environment comes from `@deepseek-ai/dsh-shell-env`. Each call runs in a fresh process (no persistent PTY session), with native `C:\...` paths and `$env:NAME` variables.
+
+<a id="deepseek-aidsh-tool-git"></a>
+
+## `@deepseek-ai/dsh-tool-git`
+
+### `git`
+
+Run a git command as a first-class sandboxed process and return its output. Pass the repository-relative subcommand and arguments as a plain array (no shell quoting needed). Git writes stay inside the session sandbox policy: within the workspace and the configured trusted roots (trusted-roots mode) no approval is needed; elsewhere the standard escalation applies. Long output is truncated; check [exit code: N] markers and investigate failures before moving on. When a command is denied, retry once with sandbox_permissions (the narrowest wider mode that suffices) plus a one-sentence justification.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "args": {
+      "type": "array",
+      "description": "Git arguments, e.g. [\"status\", \"--short\"] or [\"commit\", \"-m\", \"msg\"]",
+      "items": {
+        "type": "string"
+      }
+    },
+    "workdir": {
+      "type": "string",
+      "description": "Working directory (the repository); defaults to the session workspace."
+    },
+    "timeoutMs": {
+      "type": "number",
+      "description": "Timeout in milliseconds (default 600000)."
+    },
+    "sandbox_permissions": {
+      "type": "string",
+      "description": "The wider sandbox mode this command needs. Only valid as a one-shot retry after a denial.",
+      "enum": [
+        "workspace-write",
+        "trusted-roots",
+        "danger-full-access"
+      ]
+    },
+    "justification": {
+      "type": "string",
+      "description": "Required with sandbox_permissions."
+    }
+  },
+  "required": [
+    "args"
+  ]
+}
+```
+
+Source: [`packages/shell/tool-git/src/index.ts`](../packages/shell/tool-git/src/index.ts)
+
+Windows-only in the shipped base composition. Git runs as the directly confined process rather than through PowerShell, so the restricted token does not need to start a native grandchild.
 
 <a id="deepseek-aidsh-tool-cordis"></a>
 
