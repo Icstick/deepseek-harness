@@ -172,6 +172,10 @@ export class PermissionPresetService extends Service {
         sandbox: 'workspace-write', approval: 'ask',
         name: 'workspace-write', description: 'Write inside the workspace and permitted temporary directories; wider retries require approval.',
       },
+      'trusted-roots': {
+        sandbox: 'trusted-roots', approval: 'ask',
+        name: 'trusted-roots', description: 'Workspace plus the configured trusted roots write without per-operation approval; anything wider still asks.',
+      },
       'danger-full-access': {
         sandbox: 'danger-full-access', approval: 'never',
         name: 'danger-full-access', description: 'Full file access without approval prompts.',

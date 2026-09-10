@@ -41,14 +41,28 @@ async function answerApproval(
 ): Promise<ClientApprovalOutcome> {
   const sessionId = ctx.sessions.scopeOf(owner)
   if (sessionId === undefined) return next()
+  // The rule-creation executor rides the session command face; without a
+  // live session binding (headless client) the remember action is absent and
+  // the panel hides it.
+  const remember = async (line: string): Promise<boolean> => {
+    const live = ctx.sessions.binding(sessionId)?.session
+    if (live === undefined) return false
+    try {
+      const result = await live.command(line)
+      return result.ok
+    } catch {
+      return false
+    }
+  }
   const pending = new PendingApproval(sessionId, {
     toolName: request.toolName,
     ...(request.callId === undefined
       ? {}
       : { callId: request.callId }),
     ...(request.reason === undefined ? {} : { reason: request.reason }),
+    ...(request.context === undefined ? {} : { context: request.context }),
     ...(request.signal === undefined ? {} : { signal: request.signal }),
-  })
+  }, remember)
   const completed = Promise.withResolvers<void>()
   const remove = registerPendingInteraction(pending, async () => {
     pending.delegate()

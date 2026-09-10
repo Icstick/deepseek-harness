@@ -56,6 +56,8 @@ export interface ApprovalPresentationRequest {
   readonly callId?: ToolCallId
   /** Human-readable reason supplied by the requester. */
   readonly reason?: string
+  /** Structured target (fs path or shell command text) the ask is about. */
+  readonly context?: { path?: string; command?: string; mode?: string }
   /** Cancellation projected from the Host waterfall. */
   readonly signal?: AbortSignal
 }
@@ -77,6 +79,13 @@ export class PendingApproval {
   readonly callId: ToolCallId | undefined
   /** Human-readable reason supplied by the asker. */
   readonly reason: string | undefined
+  /** Structured target the ask is about (fs path or shell command text). */
+  readonly context: ApprovalPresentationRequest['context']
+  /**
+   * Session rule-creation executor (bound by the plugin when the session can
+   * run /permission-rule): resolves true when the rule was created.
+   */
+  readonly remember: ((line: string) => Promise<boolean>) | undefined
   /** Result returned by the Remote Event listener to the Host waterfall. */
   readonly result: Promise<ApprovalDecision>
 
@@ -91,13 +100,15 @@ export class PendingApproval {
    * @param sessionId - Agent/Session identity owning the scoped request.
    * @param request - Host approval request projected through the Remote Event.
    */
-  constructor(readonly sessionId: SessionId, request: ApprovalPresentationRequest) {
+  constructor(readonly sessionId: SessionId, request: ApprovalPresentationRequest, remember?: (line: string) => Promise<boolean>) {
     this.kind = 'approval'
     nextApprovalKey += 1
     this.key = `approval:${String(nextApprovalKey)}`
     this.toolName = request.toolName
     this.callId = request.callId
     this.reason = request.reason
+    this.context = request.context
+    this.remember = remember
     const completion = Promise.withResolvers<ApprovalDecision>()
     this.result = completion.promise
     this.#resolve = completion.resolve

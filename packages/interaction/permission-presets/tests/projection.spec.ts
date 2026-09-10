@@ -50,7 +50,7 @@ describe('permissions projection unit', () => {
     const { ctx, session } = await harness()
     const value = ctx.sessionProjections.snapshot(session).values.permissions
     expect(value).toMatchObject({ currentValue: 'workspace-write' })
-    expect(value?.options.map(option => option.value)).toEqual(['workspace-write', 'danger-full-access'])
+    expect(value?.options.map(option => option.value)).toEqual(['workspace-write', 'trusted-roots', 'danger-full-access'])
   })
 
   it('folds the knob events and notifies the change feed per knob append', async () => {
@@ -109,7 +109,7 @@ describe('/permission command', () => {
     const execution = await ctx.commands.execute(agent, '/permission', [], new AbortController().signal)
     expect(execution?.result).toEqual({
       kind: 'success',
-      text: 'current preset workspace-write (available: workspace-write, danger-full-access)',
+      text: 'current preset workspace-write (available: workspace-write, trusted-roots, danger-full-access)',
     })
     expect(session.snapshotEvents().filter(event => event.type === 'permission/preset')).toHaveLength(1)
   })
@@ -125,7 +125,7 @@ describe('/permission command', () => {
     // preset`, which the row's own title already says.
     expect(execution?.result).toEqual({
       kind: 'error',
-      text: 'unknown preset "yolo" (available: workspace-write, danger-full-access)',
+      text: 'unknown preset "yolo" (available: workspace-write, trusted-roots, danger-full-access)',
     })
     expect(session.snapshotEvents().filter(event =>
       event.type !== 'command/run' && event.type !== 'command/done')).toEqual(before)

@@ -26,8 +26,9 @@ import type { SandboxMode } from './index.ts'
  * registry-global while the effective mode is per-call truth.
  */
 export const WIDER_MODES: Record<string, readonly SandboxMode[]> = {
-  'read-only': ['workspace-write', 'danger-full-access'],
-  'workspace-write': ['danger-full-access'],
+  'read-only': ['workspace-write', 'trusted-roots', 'danger-full-access'],
+  'workspace-write': ['trusted-roots', 'danger-full-access'],
+  'trusted-roots': ['danger-full-access'],
 }
 
 /**
@@ -38,7 +39,7 @@ export const WIDER_MODES: Record<string, readonly SandboxMode[]> = {
  * mode sits below it (a `danger-full-access` default would advertise nothing
  * while a narrower-switched session stays confined with no lever).
  */
-export const ESCALATION_TARGETS: readonly SandboxMode[] = ['workspace-write', 'danger-full-access']
+export const ESCALATION_TARGETS: readonly SandboxMode[] = ['workspace-write', 'trusted-roots', 'danger-full-access']
 
 /**
  * Validate the escalation argument pairing a tool schema cannot express:
@@ -93,6 +94,22 @@ export function escalationHintMarker(subject: string): string {
 export type EscalationOutcome = 'allowed-once' | 'rejected' | 'cancelled' | 'unavailable'
 
 /**
+ * Structured target context for one escalation request: the file path a
+ * filesystem mutation targets, or the command text a shell tool is about to
+ * run. The free-form reason cannot drive rule matching or precise UI
+ * rendering alone; this field carries the machine-readable subject when the
+ * asker has one. Optional — older askers and non-escalation approvals omit it.
+ */
+export interface EscalationContext {
+  /** Target path of a filesystem mutation (as given by the model; may be relative to the session cwd). */
+  path?: string
+  /** Full command text of a shell-tool escalation. */
+  command?: string
+  /** The requested (strictly wider) mode the escalation would grant. */
+  mode?: string
+}
+
+/**
  * The minimal approval-request shape {@link approveEscalation} needs —
  * structurally the approval seam's `ApprovalService`, generic over the agent
  * type `A` and call-id type `C` so this package resolves escalations through
@@ -105,7 +122,14 @@ export interface EscalationApprover<A = object, C = string> {
    * @param req - the audit-self-contained request (agent, tool, call id, reason, optional signal).
    * @returns the human's decision as a closed {@link EscalationOutcome}.
    */
-  request(req: { agent: A; toolName: string; callId: C; reason: string; signal?: AbortSignal }): Promise<EscalationOutcome>
+  request(req: {
+    agent: A
+    toolName: string
+    callId: C
+    reason: string
+    context?: EscalationContext
+    signal?: AbortSignal
+  }): Promise<EscalationOutcome>
 }
 
 /**
@@ -138,6 +162,8 @@ export interface EscalationRequest {
   effectiveMode: SandboxMode
   /** The family's noun for the escalated action in user-facing texts (`command` for bash, `operation` for fs). */
   subject: string
+  /** Optional structured target (path or command) the escalated call is about. */
+  context?: EscalationContext
 }
 
 /**
@@ -175,6 +201,9 @@ export async function approveEscalation<A, C>(request: EscalationRequest, approv
     toolName: approval.toolName,
     callId: approval.callId,
     reason: `escalate sandbox to ${mode}: ${justification}`,
+    ...request.context !== undefined
+      ? { context: { mode, ...request.context } }
+      : {},
     ...approval.signal ? { signal: approval.signal } : {},
   })
   switch (outcome) {

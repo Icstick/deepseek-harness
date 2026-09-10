@@ -73,3 +73,18 @@
   color: var(--dsw-alias-state-error-primary);
   border-color: transparent;
 }
+
+.scopeHint {
+  padding: 0 16px 4px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 16px;
+  word-break: break-all;
+}
+
+.errorText {
+  padding: 0 16px 10px;
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 12px;
+  line-height: 16px;
+}

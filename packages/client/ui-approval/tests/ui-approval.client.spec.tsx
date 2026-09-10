@@ -314,6 +314,10 @@ function panelProps(
     escalation: `Tool ${pending.toolName} asks`,
     reject: 'Reject',
     allowOnce: 'Allow once',
+    remember: 'Remember this kind and allow',
+    remembering: 'Remembering…',
+    rememberHint: 'This session will not ask again for: {target}',
+    rememberError: 'Failed to create the rule',
   }
   return {
     matched: pending,
@@ -367,6 +371,70 @@ describe('ApprovalPanel', () => {
     await waitFor(() => {
       expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Allow once' }).disabled).toBe(false)
     })
+    pending.abort(new Error('test cleanup'))
+    await pending.result.catch(() => {})
+  })
+
+  it('offers the remember action only for trusted-roots escalations with a structured target', async () => {
+    const dir = '/tmp/project'
+    const remember = vi.fn(async () => true)
+    const pending = new PendingApproval(id('s1'), {
+      toolName: 'write',
+      reason: 'write staging file',
+      context: { path: dir + '/staging.txt', mode: 'trusted-roots' },
+    }, remember)
+    render(<ApprovalPanel {...panelProps(pending)} />)
+    // The test t() renders the raw template; interpolation is the real locale layer's job.
+    expect(screen.getByText('This session will not ask again for: {target}')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Remember this kind and allow' }))
+    expect(remember).toHaveBeenCalledWith('/permission-rule add write ' + dir)
+    await expect(pending.result).resolves.toBe('allowed-once')
+  })
+
+  it('offers the remember action for fs asks whose escalation targets full access (trusted-roots root-outside writes)', async () => {
+    const dir = '/tmp/outside'
+    const remember = vi.fn(async () => true)
+    const pending = new PendingApproval(id('s1'), {
+      toolName: 'edit',
+      reason: 'edit outside trusted roots',
+      context: { path: dir + '/file.txt', mode: 'danger-full-access' },
+    }, remember)
+    render(<ApprovalPanel {...panelProps(pending)} />)
+    expect(screen.getByText('This session will not ask again for: {target}')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Remember this kind and allow' }))
+    expect(remember).toHaveBeenCalledWith('/permission-rule add edit ' + dir)
+    await expect(pending.result).resolves.toBe('allowed-once')
+  })
+
+  it('hides the remember action without a structured context, and for full-access shell asks', async () => {
+    const fullShell = new PendingApproval(id('s1'), {
+      toolName: 'pwsh',
+      reason: 'escalate anywhere',
+      context: { command: 'git push origin main', mode: 'danger-full-access' },
+    }, vi.fn(async () => true))
+    render(<ApprovalPanel {...panelProps(fullShell)} />)
+    expect(screen.queryByRole('button', { name: 'Remember this kind and allow' })).toBeNull()
+    fullShell.abort(new Error('test cleanup'))
+    await fullShell.result.catch(() => {})
+    const plain = new PendingApproval(id('s1'), { toolName: 'write', reason: 'plain ask' })
+    render(<ApprovalPanel {...panelProps(plain)} />)
+    expect(screen.queryByRole('button', { name: 'Remember this kind and allow' })).toBeNull()
+    plain.abort(new Error('test cleanup'))
+    await plain.result.catch(() => {})
+  })
+
+  it('reports a failed rule creation and keeps the ask actionable', async () => {
+    const remember = vi.fn(async () => false)
+    const pending = new PendingApproval(id('s1'), {
+      toolName: 'pwsh',
+      reason: 'run build',
+      context: { command: 'pnpm build --filter x', mode: 'trusted-roots' },
+    }, remember)
+    render(<ApprovalPanel {...panelProps(pending)} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Remember this kind and allow' }))
+    expect(remember).toHaveBeenCalledWith('/permission-rule add pwsh pnpm build --filter x')
+    expect(await screen.findByText('Failed to create the rule')).toBeTruthy()
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Allow once' }).disabled).toBe(false)
     pending.abort(new Error('test cleanup'))
     await pending.result.catch(() => {})
   })

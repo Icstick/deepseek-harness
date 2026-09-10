@@ -116,6 +116,8 @@ export interface ApprovalRequest extends ApprovalRequestEvent {
   readonly callId?: ToolCallId
   /** The asker's human-readable explanation of WHY it is asking. */
   readonly reason?: string
+  /** Structured target of the ask (fs path or shell command text) when the asker had one. */
+  readonly context?: { path?: string; command?: string; mode?: string }
   /**
    * Aborting withdraws the question: the request settles `'cancelled'`
    * immediately and a late answer from a still-pending answerer is discarded.
@@ -219,6 +221,7 @@ export class ApprovalService extends Service {
       toolName: req.toolName,
       ...req.callId !== undefined ? { callId: req.callId } : {},
       ...req.reason !== undefined ? { reason: req.reason } : {},
+      ...req.context !== undefined ? { context: req.context } : {},
     })
     const outcome = await this.decide(req, session)
     session.append('approval/decided', { id, outcome })

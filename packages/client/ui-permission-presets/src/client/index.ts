@@ -94,6 +94,7 @@ export function apply(ctx: ClientContext): void {
       ctx.locale.register(ACCESS_NS, 'zh', {
         'preset.readOnly': accessZh['preset.readOnly'],
         'preset.workspaceWrite': accessZh['preset.workspaceWrite'],
+        'preset.trustedRoots': accessZh['preset.trustedRoots'],
         'preset.fullAccess': accessZh['preset.fullAccess'],
         'confirm.title': accessZh['confirm.title'],
         'confirm.description': accessZh['confirm.description'],
@@ -104,6 +105,7 @@ export function apply(ctx: ClientContext): void {
       ctx.locale.register(ACCESS_NS, 'en', {
         'preset.readOnly': accessEn['preset.readOnly'],
         'preset.workspaceWrite': accessEn['preset.workspaceWrite'],
+        'preset.trustedRoots': accessEn['preset.trustedRoots'],
         'preset.fullAccess': accessEn['preset.fullAccess'],
         'confirm.title': accessEn['confirm.title'],
         'confirm.description': accessEn['confirm.description'],

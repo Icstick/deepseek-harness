@@ -42,8 +42,12 @@ import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
 import * as ToolAskUser from '@deepseek-ai/dsh-tool-ask-user'
 import * as ToolBash from '@deepseek-ai/dsh-tool-bash'
 import * as ToolPwsh from '@deepseek-ai/dsh-tool-pwsh'
+import * as ToolGit from '@deepseek-ai/dsh-tool-git'
 import * as ToolBashPersistent from '@deepseek-ai/dsh-tool-bash-persistent'
 import * as ToolPwshPersistent from '@deepseek-ai/dsh-tool-pwsh-persistent'
+import SandboxProvider from '@deepseek-ai/dsh-sandbox'
+import type { ConfinedArgv, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
+import SandboxPolicyService from '@deepseek-ai/dsh-sandbox-policy'
 import CordisHostRunner from '@deepseek-ai/dsh-cordis-host-runner'
 import * as ToolCordis from '@deepseek-ai/dsh-tool-cordis'
 import * as ToolPresent from '@deepseek-ai/dsh-tool-present'
@@ -91,6 +95,13 @@ class CatalogAttachmentStore extends AttachmentStore {
 
   override readImage(_ref: ImageAttachmentRef): Promise<StoredImageAttachment> {
     return Promise.reject(new Error('gen-tool-catalog: attachment reads are unreachable during schema harvest'))
+  }
+}
+
+/** Inert confinement provider used only while harvesting the git schema. */
+class CatalogSandbox extends SandboxProvider {
+  confine(argv: readonly string[], _policy: SandboxPolicy): ConfinedArgv {
+    return { argv: [...argv], enforcement: 'full', denialSignatures: [], runnerFailureRules: [] }
   }
 }
 
@@ -271,6 +282,20 @@ const TOOL_PACKAGES: ToolPackage[] = [
     },
     note:
       'The pwsh tool is the PowerShell-dialect consumer of the bash executor seam for Windows compositions (a PowerShell executor such as `@deepseek-ai/dsh-pwsh-local` backs `ctx.shell`); it mirrors the bash tool call-for-call minus sandbox controls — `run_in_background` runs register with the generic `ctx.jobs` runtime and are collected/stopped through the `job_*` tools, and the managed `DSH_*` environment comes from `@deepseek-ai/dsh-shell-env`. Each call runs in a fresh process (no persistent PTY session), with native `C:\\...` paths and `$env:NAME` variables.',
+  },
+  {
+    pkg: '@deepseek-ai/dsh-tool-git',
+    dir: 'tool-git',
+    source: 'packages/shell/tool-git/src/index.ts',
+    requires: ['ctx.tools', 'ctx.sandbox', 'ctx.sandboxPolicy'],
+    writes: ['tool/call', 'Git repository state', 'tool/result'],
+    async mount(ctx) {
+      await ctx.plugin(CatalogSandbox)
+      await ctx.plugin(SandboxPolicyService, { mode: 'workspace-write', workspaceRoot: root })
+      await ctx.plugin(ToolGit)
+    },
+    note:
+      'Windows-only in the shipped base composition. Git runs as the directly confined process rather than through PowerShell, so the restricted token does not need to start a native grandchild.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-cordis',

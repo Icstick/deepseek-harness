@@ -36,7 +36,7 @@ import z from '@deepseek-ai/schemastery'
 import { SandboxProvider, SandboxUnavailableError } from '@deepseek-ai/dsh-sandbox'
 import type { ConfinedArgv, ConfinedSandboxMode, RunnerFailureRule, SandboxEnforcement, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
 import type { SessionId } from '@deepseek-ai/dsh-session'
-import { AclWriteGrant, assertTempRootOutsideWorkspace, tempWriteSid, workspaceWriteSid } from '@deepseek-ai/dsh-sandbox-windows-acl'
+import { AclWriteGrant, assertTempRootOutsideWorkspace, tempWriteSid, trustedRootsWriteSid, workspaceWriteSid } from '@deepseek-ai/dsh-sandbox-windows-acl'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
 import { bwrapProfileArgs, landlockProfileArgs, seatbeltProfileArgs } from './profiles.ts'
 
@@ -242,8 +242,9 @@ const RUNNER_FAILURE_RULES = {
 /**
  * Local process-sandbox provider. Registers as `ctx.sandbox`. Caches the
  * chain verdict and, on the windows-acl rung, the write grants
- * ({@link AclWriteGrant}: the standing workspace-root grant per workspace
- * and the revocable private-temp grant per live session/workspace pair, the
+ * ({@link AclWriteGrant}: the standing workspace-root grant per workspace,
+ * the standing deployment-wide trusted-roots grant per extra-root set, and
+ * the revocable private-temp grant per live session/workspace pair, the
  * latter revoked on provider dispose); the one-time probes spawn nothing
  * else.
  */
@@ -272,6 +273,10 @@ export class LocalSandboxProvider extends SandboxProvider {
    */
   private readonly workspaceGrants = new Map<string, AclWriteGrant>()
   private readonly tempCapabilities = new Map<string, AclTempCapability>()
+  /** Standing deployment-wide trusted-roots grant (extra-root ACEs; see {@link materializeTrustedGrant}). */
+  private trustedGrant: AclWriteGrant | undefined
+  /** The extra-root list the standing trusted grant was materialized for. */
+  private trustedGrantKey: string | undefined
 
   constructor(ctx: Context, config: Config) {
     super(ctx)
@@ -345,34 +350,49 @@ export class LocalSandboxProvider extends SandboxProvider {
 
   /**
    * The windows-acl runner argv for one policy. With a calling session (the
-   * policy's `sessionId`) under workspace-write, the grants are materialized
-   * once per provider lifetime — the standing workspace-root grant per
-   * workspace and a revocable, RANDOM private-temp capability per live
-   * session/workspace pair. The runner receives `--write-sid` plus
-   * `--temp-write-sid` and grants nothing itself. Agentless workspace-write
-   * calls pass the ambient temp ROOT and no SID flags: the runner creates and
-   * removes a random private child directory for that one invocation.
+   * policy's `sessionId`) under a confined write mode, the grants are
+   * materialized once per provider lifetime — the standing workspace-root
+   * grant per workspace, the standing deployment-wide trusted-roots grant on
+   * every extra writable root under trusted-roots, and a revocable, RANDOM
+   * private-temp capability per live session/workspace pair. The runner
+   * receives `--write-sid`, `--temp-write-sid` and (trusted-roots)
+   * `--trusted-sid` plus one `--trusted-dir` per extra root, and grants
+   * nothing itself. Agentless calls pass the ambient temp ROOT and no SID
+   * flags: the runner creates and removes a random private child directory
+   * for that one invocation and (trusted-roots) grants the extra roots
+   * itself.
    * @param policy - the resolved per-call policy.
    * @returns the runner invocation.
    */
   private windowsAclRunnerArgv(policy: SandboxPolicy): string[] {
     const sessionId = policy.sessionId
+    const trustedRoots = policy.mode === 'trusted-roots' ? (policy.extraWritableRoots ?? []) : []
+    // trusted-roots without configured extra roots degenerates to
+    // workspace-write: nothing extra to grant, same token shape. The runner
+    // mode argument follows, so a trusted session with an empty or missing
+    // root list still executes (as its workspace-write equivalent).
+    const runnerMode = policy.mode === 'trusted-roots' && trustedRoots.length === 0 ? 'workspace-write' : policy.mode
+    const trustedArgs = trustedRoots.flatMap(root => ['--trusted-dir', root])
     if (sessionId === undefined || policy.mode === 'read-only') {
       return [
         ...this.windowsAclRunnerInvocation(),
         '--workspace', policy.workspaceRoot,
         '--temp', tmpdir(),
-        '--mode', policy.mode,
+        '--mode', runnerMode,
+        ...trustedArgs,
       ]
     }
     const temp = this.materializeAclGrant(sessionId, policy.workspaceRoot)
+    const trustedSid = trustedRoots.length > 0 ? this.materializeTrustedGrant(trustedRoots) : undefined
     return [
       ...this.windowsAclRunnerInvocation(),
       '--workspace', policy.workspaceRoot,
       '--temp', temp.dir,
-      '--mode', policy.mode,
+      '--mode', runnerMode,
       '--write-sid', workspaceWriteSid(policy.workspaceRoot),
       '--temp-write-sid', temp.writeSid,
+      ...trustedSid === undefined ? [] : ['--trusted-sid', trustedSid],
+      ...trustedArgs,
     ]
   }
 
@@ -443,6 +463,38 @@ export class LocalSandboxProvider extends SandboxProvider {
   }
 
   /**
+   * Materialize the deployment-wide trusted-roots grant once per provider
+   * lifetime: one standing ACE naming the FIXED trusted-roots SID on every
+   * configured extra writable root (the reuse cache — dispose() never
+   * revokes them, exactly like the workspace-root ACE). Keyed by the
+   * serialized root list so a changed configuration between calls
+   * materializes the new set. Fail-closed like the workspace grant: any
+   * grant failure disposes the partial grant and throws (the caller never
+   * spawns with half the extra roots granted).
+   * @param trustedRoots - the policy's configured extra writable roots.
+   * @returns the trusted-roots write SID, or undefined when no extra roots.
+   */
+  private materializeTrustedGrant(trustedRoots: readonly string[]): string | undefined {
+    if (trustedRoots.length === 0) return undefined
+    const key = trustedRoots.join('\u0000')
+    if (this.trustedGrant !== undefined && this.trustedGrantKey === key) return this.trustedGrant.writeSid
+    const grant = AclWriteGrant.create(trustedRootsWriteSid())
+    try {
+      for (const root of trustedRoots) grant.add(root, true)
+    } catch (error) {
+      try {
+        grant.dispose()
+      } catch (cleanupError) {
+        throw new AggregateError([error, cleanupError], 'sandbox-local windows-acl trusted-roots grant failed and its cleanup also failed')
+      }
+      throw error
+    }
+    this.trustedGrant = grant
+    this.trustedGrantKey = key
+    return grant.writeSid
+  }
+
+  /**
    * Dispose every write grant (provider dispose): the revocable temp ACEs
    * are revoked, the private temp directories this provider created are
    * removed, and every SID allocation is freed; the standing workspace ACEs
@@ -454,7 +506,9 @@ export class LocalSandboxProvider extends SandboxProvider {
   private revokeAclGrants(): void {
     if (this.workspaceGrants.size === 0 && this.tempCapabilities.size === 0) return
     const failures: unknown[] = []
-    for (const grant of [...this.workspaceGrants.values(), ...[...this.tempCapabilities.values()].map(capability => capability.grant)]) {
+    const grants = [...this.workspaceGrants.values(), ...[...this.tempCapabilities.values()].map(capability => capability.grant)]
+    if (this.trustedGrant !== undefined) grants.push(this.trustedGrant)
+    for (const grant of grants) {
       try {
         grant.dispose()
       } catch (error) {
@@ -470,6 +524,8 @@ export class LocalSandboxProvider extends SandboxProvider {
     }
     this.workspaceGrants.clear()
     this.tempCapabilities.clear()
+    this.trustedGrant = undefined
+    this.trustedGrantKey = undefined
     if (failures.length > 0) {
       this.ctx.logger.warn(`sandbox-local: windows-acl grant cleanup completed with ${failures.length} failure(s)`)
       for (const error of failures) this.ctx.logger.warn(error)

@@ -226,6 +226,9 @@
       config:
         policy: !!js "(process.env.DSH_PERMISSION_MODE ?? 'workspace-write') === 'danger-full-access' ? 'never' : 'ask'"
 
+    - id: approval-rules
+      name: '@deepseek-ai/dsh-approval-rules'
+
     - id: permission
       name: '@deepseek-ai/dsh-permission-presets'
       config:
@@ -235,6 +238,9 @@
             approval: ask
           workspace-write:
             sandbox: workspace-write
+            approval: ask
+          trusted-roots:
+            sandbox: trusted-roots
             approval: ask
           danger-full-access:
             sandbox: danger-full-access
@@ -249,6 +255,10 @@
 
     - id: tool-pwsh
       name: '@deepseek-ai/dsh-tool-pwsh'
+      disabled: !!js process.platform !== 'win32'
+
+    - id: tool-git
+      name: '@deepseek-ai/dsh-tool-git'
       disabled: !!js process.platform !== 'win32'
 
     - id: tool-jobs

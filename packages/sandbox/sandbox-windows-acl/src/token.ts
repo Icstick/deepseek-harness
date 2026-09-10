@@ -163,8 +163,10 @@ export interface RestrictingSidSet {
  * (verified on Win11 26200, see the POC-worktree restrict-variant harness):
  *  - read-only:       [logon SID, EVERYONE]
  *  - workspace-write: [logon SID, EVERYONE, workspace SID, optional temp SID]
+ *  - trusted-roots:   workspace-write's list plus the fixed trusted-roots SID
+ *                     when the policy carries extra writable roots
  *
- * The logon SID + EVERYONE keep-alive group is shared by both modes: early
+ * The logon SID + EVERYONE keep-alive group is shared by all three modes: early
  * DLL init dies with 0xC0000142 and CNG (`\Device\CNG` write trustee —
  * pwsh crashes 0xE0434352) fails without them. The write SIDs join ONLY
  * workspace-write — read-only carries no write SID, so a standing grant ACE
@@ -187,10 +189,12 @@ export interface RestrictingSidSet {
  * @param api - the binding table.
  * @param currentToken - the process token to restrict.
  * @param logonSid - the copied logon session SID.
- * @param writeSids - the distinct write SIDs forming the workspace and
- * optional temp allowlists (workspace-write only; empty under read-only).
+ * @param writeSids - the distinct write SIDs forming the workspace, optional
+ * temp, and optional trusted-roots allowlists (workspace-write and
+ * trusted-roots only; empty under read-only).
  * @param known - the well-known SIDs entering the restricting list.
- * @param mode - selects the restricting list (workspace-write adds the capability SIDs).
+ * @param mode - selects the restricting list (workspace-write and
+ * trusted-roots add the capability SIDs).
  * @returns the restricted token handle.
  */
 export function createRestrictedToken(
@@ -199,12 +203,12 @@ export function createRestrictedToken(
   logonSid: NativePtr,
   writeSids: readonly NativePtr[],
   known: RestrictingSidSet,
-  mode: 'read-only' | 'workspace-write',
+  mode: 'read-only' | 'workspace-write' | 'trusted-roots',
 ): NativePtr {
   const restrictingSids = buildRestrictingSids(mode === 'read-only'
     ? [logonSid, known.world]
     : writeSids.length === 0
-      ? (() => { throw new Error('createRestrictedToken: workspace-write restricting list requires at least one write SID') })()
+      ? (() => { throw new Error('createRestrictedToken: a confined write mode restricting list requires at least one write SID') })()
       : [logonSid, known.world, ...writeSids])
   const tokenSlot = allocPtrSlot()
   const created = api.createRestrictedToken(

@@ -9,20 +9,25 @@
  * Stable argv contract (the seam builds it; a native-exe replacement would
  * keep the same contract):
  *   [node, runner.js, '--workspace', <dir>, '--temp', <dir>,
- *    '--mode', <read-only|workspace-write>,
+ *    '--mode', <read-only|workspace-write|trusted-roots>,
  *    ['--write-sid', <S-1-4-…>,
- *     '--temp-write-sid', <S-1-4-…>], '--', <argv...>]
+ *     '--temp-write-sid', <S-1-4-…>,
+ *     '--trusted-sid', <S-1-4-…-2>, '--trusted-dir', <dir>, …],
+ *    '--', <argv...>]
  *
  * Modes:
  *  - workspace-write: the workspace and temp directories carry distinct
  *    capability-SID Write grants; other ACL-addressable writes are denied
  *    except for the documented Everyone and hard-link boundaries.
+ *  - trusted-roots: workspace-write's grants PLUS the fixed trusted-roots
+ *    capability SID standing on every --trusted-dir extra root.
  *  - read-only: no capability-SID grants; the restricting list carries no
  *    capability SID, so a standing grant ACE from an earlier
- *    workspace-write period stays inert. BOTH modes drop Authenticated Users
- *    (CIM unavailable — documented in README) and INTERACTIVE/LOCAL (the
- *    Public tree writes are denied); the two lists share the keep-alive group
- *    (logon SID, EVERYONE) and differ only by the capabilities.
+ *    workspace-write/trusted-roots period stays inert. ALL confined modes
+ *    drop Authenticated Users (CIM unavailable — documented in README) and
+ *    INTERACTIVE/LOCAL (the Public tree writes are denied); the lists share
+ *    the keep-alive group (logon SID, EVERYONE) and differ only by the
+ *    capabilities.
  *
  * `--write-sid` + `--temp-write-sid`: the seam's grant contract — the
  * CALLER has already materialized distinct workspace and private-temp ACEs
@@ -49,7 +54,7 @@ import { join } from 'node:path'
 
 import { win32 } from './ffi.ts'
 import { AclSandbox, assertTempRootOutsideWorkspace } from './index.ts'
-import { tempWriteSid, workspaceWriteSid } from './workspace-sid.ts'
+import { tempWriteSid, trustedRootsWriteSid, workspaceWriteSid } from './workspace-sid.ts'
 
 const RUNNER_SIGNATURE = 'windows-acl-run'
 const RUNNER_FAILURE_EXIT = 127
@@ -65,9 +70,11 @@ function fail(detail: string): never {
 interface ParsedArgs {
   workspace: string
   temp: string
-  mode: 'read-only' | 'workspace-write'
+  mode: 'read-only' | 'workspace-write' | 'trusted-roots'
   writeSid: string | undefined
   tempWriteSid: string | undefined
+  trustedSid: string | undefined
+  trustedDirs: string[]
   command: string
   args: string[]
 }
@@ -78,6 +85,8 @@ function parseArgs(raw: string[]): ParsedArgs {
   let mode: string | undefined
   let writeSid: string | undefined
   let parsedTempWriteSid: string | undefined
+  let trustedSid: string | undefined
+  const trustedDirs: string[] = []
   let index = 0
   for (; index < raw.length; index++) {
     const token = raw[index]
@@ -94,16 +103,18 @@ function parseArgs(raw: string[]): ParsedArgs {
       case '--mode': mode = value; break
       case '--write-sid': writeSid = value; break
       case '--temp-write-sid': parsedTempWriteSid = value; break
+      case '--trusted-sid': trustedSid = value; break
+      case '--trusted-dir': trustedDirs.push(value); break
       default: fail(`unknown argument: ${token}`)
     }
   }
   if (workspace === undefined) fail('missing --workspace')
   if (temp === undefined) fail('missing --temp')
-  if (mode !== 'read-only' && mode !== 'workspace-write') fail(`unknown mode: ${String(mode)}`)
+  if (mode !== 'read-only' && mode !== 'workspace-write' && mode !== 'trusted-roots') fail(`unknown mode: ${String(mode)}`)
   const argv = raw.slice(index)
   const command = argv[0]
   if (command === undefined) fail('missing command after --')
-  return { workspace, temp, mode, writeSid, tempWriteSid: parsedTempWriteSid, command, args: argv.slice(1) }
+  return { workspace, temp, mode, writeSid, tempWriteSid: parsedTempWriteSid, trustedSid, trustedDirs, command, args: argv.slice(1) }
 }
 
 function requireDirectory(label: string, path: string): void {
@@ -119,16 +130,30 @@ async function main(): Promise<number> {
   requireDirectory('--workspace', parsed.workspace)
   requireDirectory('--temp', parsed.temp)
 
-  const seamManaged = parsed.writeSid !== undefined || parsed.tempWriteSid !== undefined
+  const seamManaged = parsed.writeSid !== undefined || parsed.tempWriteSid !== undefined || parsed.trustedSid !== undefined
   if (parsed.mode === 'read-only' && seamManaged) {
-    fail('read-only does not accept --write-sid or --temp-write-sid')
+    fail('read-only does not accept --write-sid, --temp-write-sid or --trusted-sid')
   }
-  if (parsed.mode === 'workspace-write' && (parsed.writeSid === undefined) !== (parsed.tempWriteSid === undefined)) {
-    fail('workspace-write requires --write-sid and --temp-write-sid together')
+  const confinedWrite = parsed.mode === 'workspace-write' || parsed.mode === 'trusted-roots'
+  if (confinedWrite && (parsed.writeSid === undefined) !== (parsed.tempWriteSid === undefined)) {
+    fail(`${parsed.mode} requires --write-sid and --temp-write-sid together`)
   }
-  if (parsed.mode === 'workspace-write') {
+  // trusted-roots without extra roots is legitimate: it degenerates to
+  // workspace-write (nothing extra to grant). Only a half-pair (SID without
+  // dirs, or dirs without SID) is a seam bug and fails closed.
+  if (parsed.mode === 'trusted-roots' && (parsed.trustedSid === undefined) !== (parsed.trustedDirs.length === 0)) {
+    fail('trusted-roots requires --trusted-sid together with at least one --trusted-dir')
+  }
+  if (parsed.mode !== 'trusted-roots' && (parsed.trustedSid !== undefined || parsed.trustedDirs.length > 0)) {
+    fail(`${parsed.mode} does not accept --trusted-sid or --trusted-dir`)
+  }
+  if (parsed.trustedSid !== undefined && parsed.trustedSid !== trustedRootsWriteSid()) {
+    fail('--trusted-sid does not match the fixed trusted-roots SID')
+  }
+  if (confinedWrite) {
     assertTempRootOutsideWorkspace(parsed.workspace, parsed.temp)
   }
+  for (const dir of parsed.trustedDirs) requireDirectory('--trusted-dir', dir)
 
   const api = await win32()
   // Ignore this process's own CTRL+C: the confined child (same console) keeps
@@ -145,7 +170,9 @@ async function main(): Promise<number> {
     let privateTempDir: string | null = null
     let writeSid: string | undefined
     let privateTempSid: string | undefined
-    if (parsed.mode === 'workspace-write') {
+    let trustedSid: string | undefined
+    const confinedWrite = parsed.mode === 'workspace-write' || parsed.mode === 'trusted-roots'
+    if (confinedWrite) {
       writeSid = workspaceWriteSid(parsed.workspace)
       if (seamManaged) {
         if (parsed.writeSid !== writeSid) fail('--write-sid does not match --workspace')
@@ -158,12 +185,20 @@ async function main(): Promise<number> {
         privateTempSid = tempWriteSid(privateTempDir)
       }
     }
+    if (parsed.mode === 'trusted-roots') {
+      // The fixed SID is identical whether the seam pre-granted the
+      // extra-root ACEs (manageDacls: false) or this runner grants them
+      // itself, so the standalone path derives it instead of requiring it.
+      trustedSid = parsed.trustedSid ?? trustedRootsWriteSid()
+    }
     sandbox = new AclSandbox({
-      writableDirs: parsed.mode === 'workspace-write' ? [parsed.workspace] : [],
+      writableDirs: confinedWrite ? [parsed.workspace] : [],
+      trustedDirs: parsed.mode === 'trusted-roots' ? parsed.trustedDirs : [],
       tempDir: privateTempDir,
       mode: parsed.mode,
       ...writeSid === undefined ? {} : { writeSid },
       ...privateTempSid === undefined ? {} : { tempWriteSid: privateTempSid },
+      ...trustedSid === undefined ? {} : { trustedWriteSid: trustedSid },
       manageDacls: !seamManaged,
     })
     await sandbox.init()

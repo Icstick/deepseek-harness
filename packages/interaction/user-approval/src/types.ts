@@ -46,6 +46,8 @@ declare module '@deepseek-ai/dsh-session/types' {
       toolName: string
       callId?: ToolCallId
       reason?: string
+      /** Structured target of the ask (fs path or shell command text) when the asker had one. */
+      context?: { path?: string; command?: string; mode?: string }
     }
     /**
      * The outcome of a prior `approval/asked` (same `id`) — log-only audit.
@@ -69,6 +71,8 @@ export interface ApprovalRequestEvent {
   readonly callId?: ToolCallId
   /** Human-readable reason supplied by the asker. */
   readonly reason?: string
+  /** Structured target of the ask (fs path or shell command text) when the asker had one. */
+  readonly context?: { path?: string; command?: string; mode?: string }
   /** Cancellation lifetime of the pending request. */
   readonly signal?: AbortSignal
 }

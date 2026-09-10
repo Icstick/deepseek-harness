@@ -54,11 +54,19 @@ import * as abi from './win32-abi.ts'
 
 export { AclWriteGrant } from './grant.ts'
 export { assertTempRootOutsideWorkspace } from './path-boundary.ts'
-export { tempWriteSid, workspaceWriteSid } from './workspace-sid.ts'
+export { tempWriteSid, trustedRootsWriteSid, workspaceWriteSid } from './workspace-sid.ts'
 /** Construction options: the workspace/temp allowlists and their distinct SID identities. */
 export interface AclSandboxOptions {
   /** Directories the confined child may write into (must exist and be caller-owned). */
   writableDirs: readonly string[]
+  /**
+   * Extra writable directories (trusted-roots only): the policy's configured
+   * extra roots, each carrying a standing ACE for the fixed
+   * {@link trustedRootsWriteSid} capability (must exist and be
+   * caller-owned). Workspace-write and read-only instances must leave this
+   * empty.
+   */
+  trustedDirs?: readonly string[]
   /**
    * Existing private temp directory to grant. Workspace-write callers must
    * pass it explicitly or pass null to disable temp writes; the ambient temp
@@ -74,6 +82,13 @@ export interface AclSandboxOptions {
    */
   writeSid?: string
   /**
+   * The trusted-roots capability SID: REQUIRED together with a non-empty
+   * {@link trustedDirs} under trusted-roots, absent otherwise. Derive it via
+   * {@link trustedRootsWriteSid} — the fixed deployment-wide identity whose
+   * ACEs allow-list the extra writable roots.
+   */
+  trustedWriteSid?: string
+  /**
    * The private temp directory's write SID. Required whenever
    * workspace-write grants a temp directory, absent otherwise. It must be
    * distinct from {@link writeSid}, so sibling sessions sharing a workspace
@@ -83,11 +98,13 @@ export interface AclSandboxOptions {
   /**
    * The file-effect mode this instance confines under — selects the
    * restricted token's restricting-SID list (I for read-only, J for
-   * workspace-write) and MUST match the grant shape: read-only pairs with
-   * zero grants. The runner validates the argv-borne mode string at its
-   * boundary; this typed seam trusts the union.
+   * workspace-write, K for trusted-roots) and MUST match the grant shape:
+   * read-only pairs with zero grants; trusted-roots pairs with the
+   * workspace grants PLUS the trustedDirs grants. The runner validates the
+   * argv-borne mode string at its boundary; this typed seam trusts the
+   * union.
    */
-  mode: 'read-only' | 'workspace-write'
+  mode: 'read-only' | 'workspace-write' | 'trusted-roots'
   /**
    * Whether this instance owns its DACL grants (default true). False means
    * the CALLER has already materialized the ACEs (the sandbox seam's
@@ -157,12 +174,16 @@ function freeSidBestEffort(
 export class AclSandbox {
   /** Absolute writable directories (constructor-validated). */
   readonly writableDirs: string[]
+  /** Extra writable directories (trusted-roots; constructor-validated). */
+  readonly trustedDirs: string[]
   /** The workspace SID string whose ACEs form the workspace allowlist. */
   readonly writeSid: string | undefined
-  /** The private temp directory's write SID (workspace-write with temp only). */
+  /** The trusted-roots capability SID whose ACEs allow-list the extra roots. */
+  readonly trustedWriteSid: string | undefined
+  /** The private temp directory's write SID (workspace-write/trusted-roots with temp only). */
   readonly tempWriteSid: string | undefined
   /** The file-effect mode — the restricted token's restricting-SID list selection. */
-  readonly mode: 'read-only' | 'workspace-write'
+  readonly mode: 'read-only' | 'workspace-write' | 'trusted-roots'
   private readonly tempDirOption: string | null | undefined
   private readonly manageDacls: boolean
   private tempDirResolved: string | null | undefined
@@ -170,6 +191,7 @@ export class AclSandbox {
   private token: NativePtr | undefined
   private writeSidPtr: NativePtr | undefined
   private tempWriteSidPtr: NativePtr | undefined
+  private trustedWriteSidPtr: NativePtr | undefined
   /** The well-known/logon SID allocations init() makes; freed by dispose() alongside the write SIDs. */
   private sidAllocations: NativePtr[] = []
   private grantedPaths: Array<{ path: string; sidPtr: NativePtr }> = []
@@ -177,36 +199,56 @@ export class AclSandbox {
   constructor(options: AclSandboxOptions) {
     this.mode = options.mode
     this.manageDacls = options.manageDacls ?? true
-    this.writableDirs = options.writableDirs.map((directory) => {
+    const writableDirs = options.writableDirs.map((directory) => {
       const absolute = resolve(directory)
       if (!existsSync(absolute) || !statSync(absolute).isDirectory()) {
         throw new Error(`AclSandbox writable dir does not exist or is not a directory: ${absolute}`)
       }
       return absolute
     })
+    this.writableDirs = writableDirs
+    const trustedDirs = (options.trustedDirs ?? []).map((directory) => {
+      const absolute = resolve(directory)
+      if (!existsSync(absolute) || !statSync(absolute).isDirectory()) {
+        throw new Error(`AclSandbox trusted dir does not exist or is not a directory: ${absolute}`)
+      }
+      return absolute
+    })
+    this.trustedDirs = trustedDirs
     this.tempDirOption = options.tempDir
     this.writeSid = options.writeSid
+    this.trustedWriteSid = options.trustedWriteSid
     this.tempWriteSid = options.tempWriteSid
-    if (this.mode === 'workspace-write' && this.writeSid === undefined) {
-      throw new Error('AclSandbox workspace-write requires a write SID — derive it from the workspace via workspaceWriteSid()')
+    const confinedWrite = this.mode === 'workspace-write' || this.mode === 'trusted-roots'
+    if (confinedWrite && this.writeSid === undefined) {
+      throw new Error('AclSandbox workspace-write/trusted-roots requires a write SID — derive it from the workspace via workspaceWriteSid()')
     }
-    if (this.mode === 'workspace-write' && this.tempDirOption === undefined) {
-      throw new Error('AclSandbox workspace-write requires an explicit private temp directory or null')
+    if (confinedWrite && this.tempDirOption === undefined) {
+      throw new Error('AclSandbox workspace-write/trusted-roots requires an explicit private temp directory or null')
     }
     if (this.mode === 'read-only' && this.tempDirOption !== undefined && this.tempDirOption !== null) {
       throw new Error('AclSandbox read-only does not accept a temp directory')
     }
-    if (this.mode === 'read-only' && (this.writeSid !== undefined || this.tempWriteSid !== undefined)) {
-      throw new Error('AclSandbox read-only does not accept write SIDs')
+    if (this.mode === 'read-only' && (this.writeSid !== undefined || this.tempWriteSid !== undefined || this.trustedWriteSid !== undefined || trustedDirs.length > 0)) {
+      throw new Error('AclSandbox read-only does not accept write SIDs or trusted dirs')
     }
-    if (this.mode === 'workspace-write' && this.tempDirOption !== null && this.tempWriteSid === undefined) {
-      throw new Error('AclSandbox workspace-write with temp requires a temp write SID — derive it via tempWriteSid()')
+    if (this.mode !== 'trusted-roots' && (trustedDirs.length > 0 || this.trustedWriteSid !== undefined)) {
+      throw new Error('AclSandbox trusted dirs and trusted write SID are only valid under trusted-roots')
+    }
+    if (this.mode === 'trusted-roots' && (trustedDirs.length > 0) !== (this.trustedWriteSid !== undefined)) {
+      throw new Error('AclSandbox trusted-roots requires trustedWriteSid together with trustedDirs')
+    }
+    if (confinedWrite && this.tempDirOption !== null && this.tempWriteSid === undefined) {
+      throw new Error('AclSandbox workspace-write/trusted-roots with temp requires a temp write SID — derive it via tempWriteSid()')
     }
     if (this.tempDirOption === null && this.tempWriteSid !== undefined) {
       throw new Error('AclSandbox temp write SID requires a temp directory')
     }
     if (this.writeSid !== undefined && this.tempWriteSid === this.writeSid) {
       throw new Error('AclSandbox workspace and temp write SIDs must be distinct')
+    }
+    if (this.trustedWriteSid !== undefined && (this.trustedWriteSid === this.writeSid || this.trustedWriteSid === this.tempWriteSid)) {
+      throw new Error('AclSandbox trusted-roots write SID must be distinct from the workspace and temp write SIDs')
     }
   }
 
@@ -234,10 +276,12 @@ export class AclSandbox {
       }
       this.writeSidPtr = this.writeSid === undefined ? undefined : parseSid(this.writeSid)
       this.tempWriteSidPtr = this.tempWriteSid === undefined ? undefined : parseSid(this.tempWriteSid)
+      this.trustedWriteSidPtr = this.trustedWriteSid === undefined ? undefined : parseSid(this.trustedWriteSid)
 
       const tempDir = this.mode === 'read-only' || this.tempDirOption === null ? null : this.tempDirOption
-      /* v8 ignore next -- constructor validation requires workspace-write to supply
-         an explicit temp directory or null; the other branches normalize to null. */
+      /* v8 ignore next -- constructor validation requires workspace-write and
+         trusted-roots to supply an explicit temp directory or null; the other
+         branches normalize to null. */
       if (tempDir === undefined) throw new Error('AclSandbox workspace-write temp directory was not resolved')
       if (tempDir !== null) {
         if (!existsSync(tempDir) || !statSync(tempDir).isDirectory()) {
@@ -259,6 +303,14 @@ export class AclSandbox {
           for (const path of this.writableDirs) {
             grantWrite(api, path, this.writeSidPtr)
           }
+          // Trusted-root ACEs are STANDING like the workspace's (the reuse
+          // cache — dispose() never revokes them, or the next provision would
+          // re-propagate every extra-root tree).
+          if (this.trustedWriteSidPtr !== undefined) {
+            for (const path of this.trustedDirs) {
+              grantWrite(api, path, this.trustedWriteSidPtr)
+            }
+          }
           if (tempDir !== null && this.tempWriteSidPtr !== undefined) {
             // Record BEFORE granting: grantWrite can throw after a successful
             // apply (a LocalFree failure), and the fail-closed catch must still
@@ -272,7 +324,11 @@ export class AclSandbox {
       this.sidAllocations.push(logonSid)
       const worldSid = makeWellKnownSid(api, abi.WinWorldSid)
       this.sidAllocations.push(worldSid)
-      const writeSids = [this.writeSidPtr, this.tempWriteSidPtr].filter((sid): sid is NativePtr => sid !== undefined)
+      const writeSids = [
+        this.writeSidPtr,
+        this.tempWriteSidPtr,
+        this.trustedWriteSidPtr,
+      ].filter((sid): sid is NativePtr => sid !== undefined)
       restrictedToken = createRestrictedToken(
         api, currentToken, logonSid, writeSids,
         { world: worldSid },
@@ -314,7 +370,7 @@ export class AclSandbox {
           cleanupFailures.push(cleanupError)
         }
       }
-      for (const [label, sidPtr] of [['workspace write SID', this.writeSidPtr], ['temp write SID', this.tempWriteSidPtr]] as const) {
+      for (const [label, sidPtr] of [['workspace write SID', this.writeSidPtr], ['temp write SID', this.tempWriteSidPtr], ['trusted-roots write SID', this.trustedWriteSidPtr]] as const) {
         freeSidBestEffort(api, sidPtr, label, cleanupFailures)
       }
       for (const sidPtr of this.sidAllocations.splice(0)) {
@@ -323,6 +379,7 @@ export class AclSandbox {
       this.token = undefined
       this.writeSidPtr = undefined
       this.tempWriteSidPtr = undefined
+      this.trustedWriteSidPtr = undefined
       this.tempDirResolved = undefined
       this.grantedPaths = []
       if (cleanupFailures.length > 0) {
@@ -386,9 +443,9 @@ export class AclSandbox {
   }
 
   /**
-   * Revoke the revocable (temp) grants, free the SID, close the token; the
-   * standing workspace ACEs stay (the reuse cache). Reports every cleanup
-   * failure.
+   * Revoke the revocable (temp) grants, free the SIDs, close the token; the
+   * standing workspace and trusted-root ACEs stay (the reuse cache). Reports
+   * every cleanup failure.
    */
   dispose(): void {
     const api = this.api
@@ -403,7 +460,7 @@ export class AclSandbox {
         }
       }
     }
-    for (const [label, sidPtr] of [['workspace write SID', this.writeSidPtr], ['temp write SID', this.tempWriteSidPtr]] as const) {
+    for (const [label, sidPtr] of [['workspace write SID', this.writeSidPtr], ['temp write SID', this.tempWriteSidPtr], ['trusted-roots write SID', this.trustedWriteSidPtr]] as const) {
       freeSidBestEffort(api, sidPtr, label, failures)
     }
     const token = this.token

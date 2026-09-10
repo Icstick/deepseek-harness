@@ -8,6 +8,7 @@ export const zh = {
   'unavailable': '不可用',
   'preset.readOnly': '仅可查看',
   'preset.workspaceWrite': '工作区内修改',
+  'preset.trustedRoots': '信任目录内修改',
   'preset.fullAccess': '完全权限',
   'confirm.title': '确认启用完全权限？',
   'confirm.description': '启用完全权限后，新会话将减少确认步骤，并且可以直接执行更多操作，包括敏感操作、文件修改或外部命令。仅建议在你信任后续任务时使用。',
@@ -27,6 +28,7 @@ export const en = {
   'unavailable': 'Unavailable',
   'preset.readOnly': 'Read Only',
   'preset.workspaceWrite': 'Workspace Write',
+  'preset.trustedRoots': 'Trusted Roots Write',
   'preset.fullAccess': 'Full access',
   'confirm.title': 'Enable Full access?',
   'confirm.description': 'Full access lets new sessions reduce confirmation steps and perform more actions directly, including sensitive operations, file changes, or external commands. Only use it when you trust subsequent tasks.',
@@ -39,6 +41,7 @@ export const en = {
 export const accessZh = {
   'preset.readOnly': '仅可查看',
   'preset.workspaceWrite': '工作区内修改',
+  'preset.trustedRoots': '信任目录内修改',
   'preset.fullAccess': '完全权限',
   'confirm.title': '确认启用完全权限？',
   'confirm.description': '启用完全权限后，智能体将减少确认步骤，并且可以直接执行更多操作，包括敏感操作、文件修改或外部命令。仅建议在你信任当前任务时使用。',
@@ -54,6 +57,7 @@ export type PermissionAccessKey = keyof typeof accessZh
 export const accessEn = {
   'preset.readOnly': 'Read Only',
   'preset.workspaceWrite': 'Workspace Write',
+  'preset.trustedRoots': 'Trusted Roots Write',
   'preset.fullAccess': 'Full access',
   'confirm.title': 'Enable Full access?',
   'confirm.description': 'Full access reduces confirmation steps and lets the agent perform more actions directly, including sensitive operations, file changes, or external commands. Only use it when you trust the current task.',

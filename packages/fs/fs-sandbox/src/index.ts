@@ -20,8 +20,9 @@
  * Per-call policy: `read-only` denies every mutation; `workspace-write` allows
  * a mutation only when the target canonicalizes under the policy's workspace
  * root or a platform temp area from the shared `writableRoots` policy;
- * `danger-full-access` delegates unfenced. A denial throws the structured
- * `FS_SANDBOX_DENIED`.
+ * `trusted-roots` allows the same roots PLUS the policy's extra writable
+ * roots; `danger-full-access` delegates unfenced. A denial throws the
+ * structured `FS_SANDBOX_DENIED`.
  *
  * @module @deepseek-ai/dsh-fs-sandbox
  */
@@ -126,9 +127,11 @@ export class SandboxedFileSystem extends LocalFileSystem {
     if (mode === 'read-only') {
       throw new FsError(`cannot write "${target.displayPath}": file access denied under read-only mode`, 'FS_SANDBOX_DENIED')
     }
-    // workspace-write: containment on the FRESH canonical path (catches a
-    // symlink ancestor swapped since the tool resolved this target), and the
-    // mutation delegates with THIS fresh target — never the stale one.
+    // workspace-write / trusted-roots: containment on the FRESH canonical path
+    // (catches a symlink ancestor swapped since the tool resolved this
+    // target), and the mutation delegates with THIS fresh target — never the
+    // stale one. The allow-list comes from the shared writableRoots (workspace
+    // + temp, plus the configured extra roots under trusted-roots).
     const fresh = await this.resolve(target.displayPath)
     let contained = false
     for (const root of writableRoots(policy)) {
@@ -137,8 +140,20 @@ export class SandboxedFileSystem extends LocalFileSystem {
         break
       }
     }
+    if (!contained && policy.sessionId !== undefined) {
+      // Session approval rules (dsh-approval-rules) make remembered
+      // directories directly writable in every confined mode — a path-root
+      // rule means the user already consented to this directory for the
+      // session, so no escalation should ever be raised for it. The lookup
+      // is duck-typed through ctx.get to keep this official package free of
+      // a dependency on the rule package.
+      const rules = this.ctx.get('approvalRules') as
+        | { matchesPath(sessionId: string, path: string): boolean }
+        | undefined
+      contained = rules?.matchesPath(policy.sessionId, fresh.targetKey) ?? false
+    }
     if (!contained) {
-      throw new FsError(`cannot write "${target.displayPath}": file access denied under workspace-write mode`, 'FS_SANDBOX_DENIED')
+      throw new FsError(`cannot write "${target.displayPath}": file access denied under ${mode} mode`, 'FS_SANDBOX_DENIED')
     }
     return fresh
   }

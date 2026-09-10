@@ -52,3 +52,25 @@ export function tempWriteSid(tempDir: string): string {
   const second = (digest.readUInt32LE(4) % (2 ** 30 - 1)) + 1
   return `S-1-4-${first}-${second}-1`
 }
+
+/**
+ * The deployment-wide extra-roots write identity: a FIXED capability SID
+ * whose third subauthority (2) domain-separates it from the workspace
+ * (two-subauthority) and temp (`-1`) identities. Every `trusted-roots`
+ * execution carries the same SID because the configured extra writable roots
+ * are deployment-wide (one allow-list shared by every workspace): each extra
+ * root's DACL holds one standing ACE naming this SID, materialized once per
+ * root per machine (the exact-ACE skip then makes every later provision
+ * O(1)). The SID string itself is not a secret — only the ACEs that name it
+ * and the tokens that carry it define its power, exactly like the workspace
+ * SID. The fixed salt means two DSH deployments on one machine share the
+ * identity; that is harmless because neither can write a root the other
+ * granted without its own token carrying the SID and the DACL naming it.
+ * @returns the fixed trusted-roots write SID string.
+ */
+export function trustedRootsWriteSid(): string {
+  const digest = createHash('sha256').update('dsh trusted-roots v1\0', 'utf8').digest()
+  const first = (digest.readUInt32LE(0) % (2 ** 30 - 1)) + 1
+  const second = (digest.readUInt32LE(4) % (2 ** 30 - 1)) + 1
+  return `S-1-4-${first}-${second}-2`
+}
